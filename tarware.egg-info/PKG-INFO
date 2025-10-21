@@ -1,0 +1,42 @@
+Metadata-Version: 2.4
+Name: tarware
+Version: 1.1.0
+Summary: Task-Assignment Multi-Robot Warehouse environment for reinforcement learning
+Author-email: Raul Steleac <raulsteleac@ed.ac.uk>
+License: MIT License
+        
+        Copyright (c) 2024 Raul Steleac
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        
+Project-URL: Repository, https://github.com/raulsteleac/task-assignment-robotic-warehouse.git
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python :: 3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: numpy
+Requires-Dist: gymnasium
+Requires-Dist: six==1.16.0
+Requires-Dist: pyglet==1.5.11
+Requires-Dist: networkx==3.2.1
+Requires-Dist: pyastar2d@ git+https://github.com/raulsteleac/pyastar2d_TARWARE#egg=pyastar2d_TARWARE
+Provides-Extra: test
+Requires-Dist: pytest; extra == "test"
+Dynamic: license-file

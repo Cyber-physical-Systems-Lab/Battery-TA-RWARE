@@ -1,0 +1,15 @@
+Failure # 1 (occurred at 2025-10-21_10-47-15)
+The actor died because of an error raised in its creation task, [36mray::PPO.__init__()[39m (pid=3152571, ip=130.238.16.41, actor_id=1701fea6bd9ff1f2d0e3482201000000, repr=PPO(env=<class 'train_utils.WarehouseMultiAgentEnv'>; env-runners=21; learners=0; multi-agent=True))
+  File "/home/xuezhi/miniconda3/envs/rllib_env/lib/python3.10/site-packages/ray/rllib/algorithms/algorithm.py", line 536, in __init__
+    super().__init__(
+  File "/home/xuezhi/miniconda3/envs/rllib_env/lib/python3.10/site-packages/ray/tune/trainable/trainable.py", line 158, in __init__
+    self.setup(copy.deepcopy(self.config))
+  File "/home/xuezhi/miniconda3/envs/rllib_env/lib/python3.10/site-packages/ray/rllib/algorithms/algorithm.py", line 644, in setup
+    self.env_runner_group = EnvRunnerGroup(
+  File "/home/xuezhi/miniconda3/envs/rllib_env/lib/python3.10/site-packages/ray/rllib/env/env_runner_group.py", line 196, in __init__
+    self._setup(
+  File "/home/xuezhi/miniconda3/envs/rllib_env/lib/python3.10/site-packages/ray/rllib/env/env_runner_group.py", line 284, in _setup
+    spaces = self.get_spaces()
+  File "/home/xuezhi/miniconda3/envs/rllib_env/lib/python3.10/site-packages/ray/rllib/env/env_runner_group.py", line 312, in get_spaces
+    spaces = self.foreach_env_runner(
+IndexError: list index out of range
