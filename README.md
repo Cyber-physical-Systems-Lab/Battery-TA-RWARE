@@ -35,7 +35,7 @@ The environment is configurable: it allows for different sizes, rack layouts, nu
 Below is an illustration of a medium (240 item location) warehouse with 19 trained agents (12 AGVs (hexagons) and 7 Pickers (diamonds)). The agents are following a pre-defined heuristic, defined in `rware/heuristic.py`. This visualisation can be achieved using the `env.render()` function as described later.
 
 <p align="center">
- <img width="450px" src="docs/img/ta-rware-slow.gif" align="center" alt="Task-Assignment Multi-Robot Warehouse (RWARE) illustration" />
+ <img width="450px" src="episode_0.gif" align="center" alt="Task-Assignment Multi-Robot Warehouse (RWARE) illustration" />
 </p>
 
 
