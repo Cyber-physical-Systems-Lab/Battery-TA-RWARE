@@ -194,7 +194,8 @@ class Warehouse(gym.Env):
 
         self.max_inactivity_steps: Optional[int] = max_inactivity_steps
         self.reward_type = reward_type
-        self._cur_inactive_steps = None
+        # Initialize inactive steps counter to 0 to avoid comparisons with None before reset()
+        self._cur_inactive_steps = 0
         self._cur_steps = 0
         self.max_steps = max_steps
 
@@ -396,7 +397,7 @@ class Warehouse(gym.Env):
                         self.stuck_counters[agent.id - 1].reset((agent.x, agent.y))
             else:
                 # Check if agent finished the given path, if not continue the path
-                if agent.path == []:
+                if agent.path is None or agent.path == []:
                     if agent.charging and agent.battery < _BATTERY_FULL:
                         agent.req_action = Action.CHARGE
                         agent.charging = False
@@ -410,7 +411,7 @@ class Warehouse(gym.Env):
                     agent.req_action = get_next_micro_action(agent.x, agent.y, agent.dir, agent.path[0])
                     agvs_distance_travelled += int(agent.type == AgentType.AGV)
                     pickers_distance_travelled += int(agent.type == AgentType.PICKER)
-                if len(agent.path) == 1:
+                if agent.path is not None and len(agent.path) == 1:
                     # If agent is at the end of a path and carrying a shelf and the target location is already occupied, restart agent
                     if agent.carrying_shelf and self.grid[CollisionLayers.SHELVES, agent.path[-1][1], agent.path[-1][0]]:
                         agent.req_action = Action.NOOP
@@ -427,9 +428,9 @@ class Warehouse(gym.Env):
                             and self.agents[self.grid[CollisionLayers.AGVS, agent.path[-1][1], agent.path[-1][0]] - 1].req_action == Action.TOGGLE_LOAD
                             ):
                             self.stuck_counters[agent.id - 1].reset((agent.x, agent.y))
-
+                            
             # Check if agent has finished its path and should charge
-            if agent.path == [] and agent.charging and agent.battery < _BATTERY_FULL:
+            if (agent.path is None or agent.path == []) and agent.charging and agent.battery < _BATTERY_FULL:
                 agent.req_action = Action.CHARGE
                 agent.charging = False
                 agent.busy = False
@@ -662,7 +663,7 @@ class Warehouse(gym.Env):
 
         return rewards, shelf_deliveries
 
-    def reset(self, seed=None, options=None)-> Tuple:
+    def reset(self, seed=int, options=None)-> Tuple:
         # Reset counters
         Shelf.counter = 0
         Agent.counter = 0
@@ -750,7 +751,7 @@ class Warehouse(gym.Env):
             shelf_deliveries,
             macro_actions,
         )
-        return new_obs, list(rewards), terminateds, truncateds, info
+        return list(new_obs), list(rewards), terminateds, truncateds, info
 
     def _build_info(
         self,

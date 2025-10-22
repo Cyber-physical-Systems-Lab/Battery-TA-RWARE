@@ -225,7 +225,7 @@ class Viewer(object):
         x_offset = (self.grid_size + 1) * col + self.grid_size // 2 + 5
         y_offset = (self.rows - row - 1) * (self.grid_size + 1) + self.grid_size // 2 - 10
         
-        if level > 60:
+        if level > 80:
             color = (0, 255, 0)  # Green
         elif level > 20:
             color = (255, 255, 0)  # Yellow
