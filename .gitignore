@@ -250,3 +250,4 @@ $RECYCLE.BIN/
 # Project specific ignores
 /log
 /results
+*.egg-info
