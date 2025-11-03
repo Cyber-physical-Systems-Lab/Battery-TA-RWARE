@@ -37,8 +37,8 @@ for size, obs_type, num_agvs, num_pickers in _perms:
             "num_agvs":  num_agvs,
             "num_pickers": num_pickers,
             "request_queue_size": _request_queues[size],
-            "max_inactivity_steps": None,
-            "max_steps": 500,
+            "max_inactivity_steps": 100,
+            "max_steps": 5000,
             "reward_type": RewardType.INDIVIDUAL,
             "observation_type": obs_type,
         },
@@ -46,7 +46,7 @@ for size, obs_type, num_agvs, num_pickers in _perms:
 
 def full_registration():
     _perms = itertools.product(_sizes.keys(), _obs_types, _request_queues, range(1,20), range(1, 10),)
-    for size, obs_type, num_agvs, num_pickers in _perms:
+    for size, obs_type, request_queue_size, num_agvs, num_pickers in _perms:
         # normal tasks with modified column height
         gym.register(
             id=f"tarware-{size}-{num_agvs}agvs-{num_pickers}pickers-{obs_type}obs-chg-v1",
@@ -58,9 +58,9 @@ def full_registration():
                 "num_agvs":  num_agvs,
                 "num_pickers": num_pickers,
                 "sensor_range": 1,
-                "request_queue_size": _request_queues[size],
+                "request_queue_size": _request_queues[request_queue_size],
                 "max_inactivity_steps": None,
-                "max_steps": 500,
+                "max_steps": 5000,
                 "reward_type": RewardType.INDIVIDUAL,
                 "observation_type": obs_type,
             },

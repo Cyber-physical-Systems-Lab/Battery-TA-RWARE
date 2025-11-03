@@ -1,5 +1,5 @@
 import random
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import gymnasium as gym
 import networkx as nx
@@ -326,8 +326,9 @@ class Warehouse(gym.Env):
         grid = np.array(grid, dtype=np.float32)
         grid[np.where(grid == 1)] = np.inf
         grid[np.where(grid == 0)] = 1
-        astar_path = pyastar2d.astar_path(grid, np.add(start, start_fix), goal, allow_diagonal=False) # returns None if cant find path
-        # astar_path = astar_path[int(np.where(astar_path == np.add(start, start_fix))[0][0]):]
+        adjusted_start = (start[0] + start_fix[0], start[1] + start_fix[1])
+        astar_path = pyastar2d.astar_path(grid, adjusted_start, goal, allow_diagonal=False) # returns None if cant find path
+        # astar_path = astar_path[int(np.where(astar_path == adjusted_start)[0][0]):]
         if astar_path is not None:
             astar_path = [tuple(x) for x in list(astar_path)] # convert back to other format
             astar_path = astar_path[1 - int(grid[start[0], start[1]] > 1):]
@@ -353,8 +354,8 @@ class Warehouse(gym.Env):
     def get_carrying_shelf_information(self):
         return [agent.carrying_shelf != None for agent in self.agents[:self.num_agvs]]
 
-    def get_shelf_request_information(self) -> np.ndarray[int]:
-        request_item_map = np.zeros(len(self.shelfs))
+    def get_shelf_request_information(self) -> np.ndarray[Any, np.dtype[np.int_]]:
+        request_item_map = np.zeros(len(self.shelfs), dtype=int)
         requested_shelf_ids = [shelf.id for shelf in self.request_queue]
         for id_ in self.shelf_action_ids:
             coords = self.action_id_to_coords_map[id_]
@@ -362,8 +363,8 @@ class Warehouse(gym.Env):
                 request_item_map[id_ - len(self.goals) - 1] = 1
         return request_item_map
 
-    def get_empty_shelf_information(self) -> np.ndarray[int]:
-        empty_item_map = np.zeros(len(self.shelfs))
+    def get_empty_shelf_information(self) -> np.ndarray[Any, np.dtype[np.int_]]:
+        empty_item_map = np.zeros(len(self.shelfs), dtype=int)
         for id_ in self.shelf_action_ids:
             coords = self.action_id_to_coords_map[id_]
             if self.grid[CollisionLayers.SHELVES, coords[0], coords[1]] == 0 and (
@@ -402,7 +403,7 @@ class Warehouse(gym.Env):
                         agent.req_action = Action.CHARGE
                         agent.charging = False
                         agent.busy = False
-                        print(f"Agent {agent.id} at ({agent.x}, {agent.y}) setting Action.CHARGE, battery {agent.battery}")
+                        # print(f"Agent {agent.id} at ({agent.x}, {agent.y}) setting Action.CHARGE, battery {agent.battery}")
                     elif agent.type in [AgentType.AGV, AgentType.AGENT]:
                         agent.req_action = Action.TOGGLE_LOAD
                     elif agent.type == AgentType.PICKER:
@@ -516,7 +517,7 @@ class Warehouse(gym.Env):
             agent.req_action = Action.NOOP
         return clashes
 
-    def resolve_stuck_agents(self) -> None:
+    def resolve_stuck_agents(self) -> int:
         # This can happen when their goal is occupied after reaching their last step/re-calculating a path
         overall_stucks = 0
         moving_agents = [
@@ -562,7 +563,7 @@ class Warehouse(gym.Env):
     def _execute_rotation(self, agent: Agent) -> None:
         agent.dir = agent.req_direction()
 
-    def _execute_load(self, agent: Agent, rewards: np.ndarray[int]) -> np.ndarray[int]:
+    def _execute_load(self, agent: Agent, rewards: np.ndarray[Any, np.dtype[np.float64]]) -> np.ndarray[Any, np.dtype[np.float64]]:
         shelf_id = self.grid[CollisionLayers.SHELVES, agent.y, agent.x]
         picker_id = self.grid[CollisionLayers.PICKERS, agent.y, agent.x]
         if shelf_id:
@@ -588,7 +589,7 @@ class Warehouse(gym.Env):
             agent.busy = False
         return rewards
 
-    def _execute_unload(self, agent: Agent, rewards: np.ndarray[int]) -> np.ndarray[int]:
+    def _execute_unload(self, agent: Agent, rewards: np.ndarray[Any, np.dtype[np.float64]]) -> np.ndarray[Any, np.dtype[np.float64]]:
         if (agent.x, agent.y) in self.goals or (agent.x, agent.y) in [(s.x, s.y) for s in self.charging_stations] or self.grid[CollisionLayers.SHELVES, agent.y, agent.x] != 0:
             agent.busy = False
             return rewards
@@ -597,7 +598,7 @@ class Warehouse(gym.Env):
             if (
                 (agent.type == AgentType.AGV and picker_id)
                 or agent.type == AgentType.AGENT
-            ):
+            ) and agent.carrying_shelf is not None:
                 self.grid[CollisionLayers.SHELVES, agent.y, agent.x] = agent.carrying_shelf.id
                 self.grid[CollisionLayers.CARRIED_SHELVES, agent.y, agent.x] = 0
                 agent.carrying_shelf = None
@@ -623,7 +624,7 @@ class Warehouse(gym.Env):
                 agent.battery = min(_BATTERY_FULL, agent.battery + _BATTERY_CHARGE_RATE)
                 break
 
-    def execute_micro_actions(self, rewards: np.ndarray[int]) -> np.ndarray[int]:
+    def execute_micro_actions(self, rewards: np.ndarray[Any, np.dtype[np.float64]]) -> np.ndarray[Any, np.dtype[np.float64]]:
         for agent in self.agents:
             if agent.req_action == Action.FORWARD:
                 self._execute_forward(agent)
@@ -638,7 +639,7 @@ class Warehouse(gym.Env):
                 self._execute_charge(agent)
         return rewards
 
-    def process_shelf_deliveries(self, rewards: np.ndarray[int]) -> np.ndarray[int]:
+    def process_shelf_deliveries(self, rewards: np.ndarray[Any, np.dtype[np.float64]]) -> Tuple[np.ndarray[Any, np.dtype[np.float64]], int]:
         shelf_deliveries = 0
         for y, x in self.goals:
             shelf_id = self.grid[CollisionLayers.CARRIED_SHELVES, x, y]
@@ -663,7 +664,7 @@ class Warehouse(gym.Env):
 
         return rewards, shelf_deliveries
 
-    def reset(self, seed=int, options=None)-> Tuple:
+    def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple:
         # Reset counters
         Shelf.counter = 0
         Agent.counter = 0
@@ -704,17 +705,16 @@ class Warehouse(gym.Env):
         self.stuck_counters = [StuckCounter((agent.x, agent.y)) for agent in self.agents]
         self._recalc_grid()
 
-        self.request_queue = list(
-            np.random.choice(self.shelfs, size=self.request_queue_size, replace=False)
-        )
+        indices = np.random.choice(len(self.shelfs), size=self.request_queue_size, replace=False)
+        self.request_queue = [self.shelfs[i] for i in indices]
         self.observation_space_mapper.extract_environment_info(self)
-        return tuple([self.observation_space_mapper.observation(agent) for agent in self.agents])
+        return tuple([self.observation_space_mapper.observation(agent) for agent in self.agents]), {}
 
     def step(
-        self, macro_actions: List[int]
-    ) -> Tuple[List[np.ndarray], List[float], List[bool], List[bool], Dict]:
+        self, action
+    ) -> Tuple[Any, Any, Any, Any, Dict[str, Any]]:
         # Attribute macro actions to agents and resolve conflicts
-        agvs_distance_travelled, pickers_distance_travelled = self.attribute_macro_actions(macro_actions)
+        agvs_distance_travelled, pickers_distance_travelled = self.attribute_macro_actions(action)
         clashes_count = self.resolve_move_conflict(self.agents)
         # Restart agents if they are stuck at the same position
         stucks_count = self.resolve_stuck_agents()
@@ -749,7 +749,7 @@ class Warehouse(gym.Env):
             clashes_count,
             stucks_count,
             shelf_deliveries,
-            macro_actions,
+            action,
         )
         return list(new_obs), list(rewards), terminateds, truncateds, info
 

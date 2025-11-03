@@ -9,9 +9,9 @@ parser = ArgumentParser(description="Run tests with vector environments on Wareh
 
 parser.add_argument(
         "--num_episodes",
-        default=1000,
+        default=10,
         type=int,
-        help="The seed to run with"
+        help="The episodes to run with"
     )
 parser.add_argument(
         "--seed",
@@ -31,13 +31,19 @@ def info_statistics(infos, global_episode_return, episode_returns):
     _total_deliveries = 0
     _total_clashes = 0
     _total_stuck = 0
+    _total_agvs_distance = 0
+    _total_pickers_distance = 0
     for info in infos:
         _total_deliveries += info["shelf_deliveries"]
         _total_clashes += info["clashes"]
         _total_stuck += info["stucks"]
+        _total_agvs_distance += info["agvs_distance_travelled"]
+        _total_pickers_distance += info["pickers_distance_travelled"]
         info["total_deliveries"] = _total_deliveries
         info["total_clashes"] = _total_clashes
         info["total_stuck"] = _total_stuck
+        info["total_agvs_distance"] = _total_agvs_distance
+        info["total_pickers_distance"] = _total_pickers_distance
     last_info = infos[-1]
     last_info["episode_length"] = len(infos)
     last_info["global_episode_return"] = global_episode_return
@@ -50,10 +56,10 @@ if __name__ == "__main__":
     completed_episodes = 0
     for i in range(args.num_episodes):
         start = time.time()
-        infos, global_episode_return, episode_returns = heuristic_episode(env.unwrapped, args.render, seed+i, save_gif=args.render, gif_path=f"episode_{i}.gif")
+        infos, global_episode_return, episode_returns = heuristic_episode(env.unwrapped, args.render, seed+i, save_gif=False, gif_path=f"episode_{i}.gif")
         end = time.time()
         last_info = info_statistics(infos, global_episode_return, episode_returns)
         last_info["overall_pick_rate"] = last_info.get("total_deliveries") * 3600 / (5 * last_info['episode_length'])
         episode_length = len(infos)
-        print(f"Completed Episode {completed_episodes}: | [Overall Pick Rate={last_info.get('overall_pick_rate'):.2f}]| [Global return={last_info.get('global_episode_return'):.2f}]| [Total shelf deliveries={last_info.get('total_deliveries'):.2f}]| [Total clashes={last_info.get('total_clashes'):.2f}]| [Total stuck={last_info.get('total_stuck'):.2f}] | [FPS = {episode_length/(end-start):.2f}]")
+        print(f"Completed Episode {completed_episodes}: | [Overall Pick Rate={last_info.get('overall_pick_rate'):.2f}]| [Global return={last_info.get('global_episode_return'):.2f}]| [Total shelf deliveries={last_info.get('total_deliveries'):.2f}]| [Total clashes={last_info.get('total_clashes'):.2f}]| [Total stuck={last_info.get('total_stuck'):.2f}] | [Total AGVs distance={last_info.get('total_agvs_distance'):.2f}] | [Total Pickers distance={last_info.get('total_pickers_distance'):.2f}] | [FPS = {episode_length/(end-start):.2f}]")
         completed_episodes += 1

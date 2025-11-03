@@ -50,7 +50,7 @@ def heuristic_episode(env, render=False, seed=None, save_gif=False, gif_path="ep
     frames = []  # List to collect frames for GIF
     
     # New: Define battery threshold for recharging
-    BATTERY_LOW_THRESHOLD = 20
+    BATTERY_LOW_THRESHOLD = 10
     
     while not done:
 
@@ -163,7 +163,7 @@ def heuristic_episode(env, render=False, seed=None, save_gif=False, gif_path="ep
                     actions[agv] = 0  # No-op to stop moving
                     agv.path = []  # Clear path so charging logic triggers
                     agv.charging = True
-                    print(f"AGV {agv.id} started charging at ({agv.x}, {agv.y}), battery {agv.battery}")
+                    # print(f"AGV {agv.id} started charging at ({agv.x}, {agv.y}), battery {agv.battery}")
                     # Don't remove mission yet - stay assigned until battery is full
                 else:
                     actions[agv] = mission.location_id if not agv.busy else 0  # Continue moving toward station
@@ -186,7 +186,7 @@ def heuristic_episode(env, render=False, seed=None, save_gif=False, gif_path="ep
                     actions[picker] = 0  # No-op to stop moving
                     picker.path = []  # Clear path so charging logic triggers
                     picker.charging = True
-                    print(f"Picker {picker.id} started charging at ({picker.x}, {picker.y}), battery {picker.battery}")
+                    # print(f"Picker {picker.id} started charging at ({picker.x}, {picker.y}), battery {picker.battery}")
                     # Don't remove mission yet - stay assigned until battery is full
                 else:
                     actions[picker] = mission.location_id  # Continue moving toward station
@@ -203,6 +203,7 @@ def heuristic_episode(env, render=False, seed=None, save_gif=False, gif_path="ep
         # macro_action should be the index of self.action_id_to_coords_map
         if render:
             env.render(mode="human")
+        
         if save_gif:
             frame = env.render(mode="rgb_array")
             frames.append(frame)
@@ -214,6 +215,8 @@ def heuristic_episode(env, render=False, seed=None, save_gif=False, gif_path="ep
         done = all(done)
         all_infos.append(info)
         timestep += 1
+        if done:
+            print(f"Timestep {timestep} completed.")
 
     # Save GIF if requested
     if save_gif and frames:

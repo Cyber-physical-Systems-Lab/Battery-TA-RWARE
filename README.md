@@ -1,5 +1,4 @@
-
- <p align="center">TA-RWARE: Task-Assignment Multi-Robot Warehouse </p>
+<p align="center">Battery-TA-RWARE: Task-Assignment Multi-Robot Warehouse with Battery Management</p>
  <p align="center">
  <img width="550px" src="docs/img/tarware_explanation.png" align="center" alt="Task-Assignment Multi-Robot Warehouse (RWARE)" />
 </p>
@@ -13,7 +12,7 @@
   - [What does it look like?](#what-does-it-look-like)
   - [Action Space](#action-space)
   - [Observation Space](#observation-space)
-  - [Dynamics: Collisions](#dynamics-collisions)
+  - [Dynamics: Collisions and Battery](#dynamics-collisions-and-battery)
   - [Rewards](#rewards)
 - [Environment Parameters](#environment-parameters)
   - [Naming Scheme](#naming-scheme)
@@ -26,13 +25,13 @@
 
 # Environment Description
 
-The task-assignment multi-robot warehouse (TA-RWARE) is an adaptation of the  [original multi-robot warehouse (RWARE)](https://github.com/uoe-agents/robotic-warehouse) environment to enable a more realistic scenario, inspired by the [Quicktron Quickbin](https://www.quicktron.com.cn/web/solution/quickpick.html?sitecode=en) warehouse, where two groups of heterogenous agents are required to cooperate to maximize the crew's overall pick-rate, measured in order-lines delivered per hour. The actions of each agent represent locations in the warehouse to facilitate this cooperation and direct optimization of the throughput of deliveries. We denote one group of these agents as AGVs (carrier agents) and Pickers (loading agents).
+The Battery-TA-RWARE (Battery-Enhanced Task-Assignment Multi-Robot Warehouse) is an adaptation of the  [original multi-robot warehouse (RWARE)](https://github.com/uoe-agents/robotic-warehouse) environment to enable a more realistic scenario, inspired by the [Quicktron Quickbin](https://www.quicktron.com.cn/web/solution/quickpick.html?sitecode=en) warehouse, where two groups of heterogenous agents are required to cooperate to maximize the crew's overall pick-rate, measured in order-lines delivered per hour. The actions of each agent represent locations in the warehouse to facilitate this cooperation and direct optimization of the throughput of deliveries. We denote one group of these agents as AGVs (carrier agents) and Pickers (loading agents). Agents now include battery management, requiring them to balance task execution with recharging to avoid penalties or immobilization.
 
-The environment is configurable: it allows for different sizes, rack layouts, number of requested items and number of agents. 
+The environment is configurable: it allows for different sizes, rack layouts, number of requested items, number of agents, and battery-related parameters. 
 
 ## What does it look like?
 
-Below is an illustration of a medium (240 item location) warehouse with 19 trained agents (12 AGVs (hexagons) and 7 Pickers (diamonds)). The agents are following a pre-defined heuristic, defined in `rware/heuristic.py`. This visualisation can be achieved using the `env.render()` function as described later.
+Below is an illustration of a medium (240 item location) warehouse with 19 trained agents (12 AGVs (hexagons) and 7 Pickers (diamonds)). The agents are following a pre-defined heuristic, defined in `tarware/heuristic.py`. This visualisation can be achieved using the `env.render()` function as described later.
 
 <p align="center">
  <img width="450px" src="episode_0.gif" align="center" alt="Task-Assignment Multi-Robot Warehouse (RWARE) illustration" />
@@ -42,12 +41,12 @@ Below is an illustration of a medium (240 item location) warehouse with 19 train
 ## Action Space
 In this simulation, robots have the following discrete action space:
 
-- Action space AGVs = {Shelf Locations, Goal Locations}
-- Action Space Pickers = {Shelf Locations, Goal Locations*}
+- Action space AGVs = {Shelf Locations, Goal Locations, Charging Stations}
+- Action Space Pickers = {Shelf Locations, Goal Locations*, Charging Stations}
 
 (* the goal locations are invalidated from the action space of the Picker agents to reflect their role in the warehouse)
 
-One of the main challenges of this environment is the sheer size of the action space that scales with the layout of the warehouse. While this design introduces certain disadvantages, it facilitates easier cooperation between AGVs and Pickers that need to synchronize to meet at a certain shelf location at a certain time to execute a pick. The path traversal is solved through an A* algorithm, while collisions are avoided through an updated logic of the RWARE collision avoidance implementation. 
+Agents can now select charging stations to recharge their batteries. One of the main challenges of this environment is the sheer size of the action space that scales with the layout of the warehouse. While this design introduces certain disadvantages, it facilitates easier cooperation between AGVs and Pickers that need to synchronize to meet at a certain shelf location at a certain time to execute a pick. The path traversal is solved through an A* algorithm, while collisions are avoided through an updated logic of the RWARE collision avoidance implementation. 
 
 ## Observation Space
 The observations for the agents can either can either provide a partial view of the environment (facilitating Partial Observability studies) or global:
@@ -57,17 +56,26 @@ Global observation spaces are identical for all agents, and consist of as:
 - The carrying status for AGVs, together with the requested status of the carried shelf.
 - The loading status for AGVs
 - The status of each shelf location, occupied and requested.
+- Battery levels for all agents (e.g., current charge percentage).
 
 Partial observation space remove parts of this information from each agent type, where AGVs do not have access to the carrying/loading statuses of other AGVs and Pickers do not observe any information about the shelf states.
 
 We note the distinction to the original RWARE environment, where the observation space is a fixed size window around each agent. The nature of the TA problem and of the action space require the agents to have a wide scope of information on the status of the shelf locations and requested items to maximize the pick-rates. 
 
-## Dynamics: Collisions
+## Dynamics: Collisions and Battery
 
 Collision dynamics are modeled by adapting the original RWARE implementation to the A* path-finding based traversal. Whenever a clash happens (agent i steps on a current/future position of agent j), the agent goes into a "fixing_clash" state where it recomputes its trajectory towards the target location while taking the current position of the other agents into account. We note that this logic might lead to deadlock states, agents becoming stuck, which we model by allowing the workers a fixed window of time-steps in which they can attempt to recalculate their path. If no viable path was found during this period, the agents become available again and can choose another target location.
 
+Battery Dynamics: Agents have a battery level (0-100%) that depletes based on actions:
+- Movement: Consumes 1 unit per step.
+- Loading/Unloading: Consumes 2 units.
+- Standby: Consumes 0.1 units per step.
+Agents must visit charging stations to recharge (5 units per step while charging). Low battery (<20%) triggers penalties and can immobilize agents if fully depleted. Charging stations are placed at fixed locations (e.g., highways).
+
 ## Rewards
 At each time a set number of shelves R is requested. When a requested shelf is brought to a goal location, another shelf is uniformly sampled and added to the current requests. AGVs are rewarded for successfully delivering a requested shelf to a goal location, with a reward of 1. Pickers receive a reward of 0.1 whenerver they help an AGV to load/unload a shelf. A significant challenge in these environments is for AGVs to deliver requested shelves but also finding an empty location to return the previously delivered shelf. Having multiple steps between deliveries leads to a sparse reward signal.
+
+Battery Rewards: Agents receive a penalty of -0.01 per step if battery is low (<20%). Successful charging provides a small positive reward to encourage maintenance.
 
 # Environment Parameters
 
@@ -76,19 +84,34 @@ The multi-robot warehouse task is parameterised by:
 - The size of the warehouse which can be modified based on the number of rows, columns of shelf racks and the number of shelves per rack. Here rack refers to a group of shelf's initial locations.
 - The number of agents, and the ratio between AGVs and Pickers.
 - The number of requested shelves R.
-- The observability type: "partial"|"global|
+- The observability type: "partial"|"global".
+- Battery Parameters: Initial battery levels, consumption rates, charge rates, low battery thresholds, and charging station placements.
+
+## Naming Scheme
+
+The environment naming follows the pattern: `tarware-{size}-{num_agvs}agvs-{num_pickers}pickers-{obs_type}obs-chg-v1`
+
+- `size`: tiny, small, medium, large, extralarge
+- `num_agvs`: Number of AGVs (1-20)
+- `num_pickers`: Number of Pickers (1-10)
+- `obs_type`: partialobs, globalobs
+- `chg`: Indicates battery/charging features
+
+## Custom layout
+
+You can customize the warehouse layout by modifying parameters in `tarware/__init__.py`, such as grid size, shelf rows/columns, and charging station positions.
 
 # Installation
 
 ```sh
-git clone git@github.com:uoe-agents/task-assignment-robotic-warehouse.git
+git clone git@github.com:uoe-agents/task-assignment-robotic-warehouse.git  # Or your fork/repo
 cd task-assignment-robotic-warehouse
 pip install -e .
 ```
 
 # Getting Started
 
-RWARE was designed to be compatible with Open AI's Gym framework.
+Battery-TA-RWARE was designed to be compatible with Open AI's Gym framework.
 
 Creating the environment is done exactly as one would create a gymnasium environment:
 
@@ -96,7 +119,7 @@ Creating the environment is done exactly as one would create a gymnasium environ
 import tarware
 import gymnasium as gym
 
-env = gym.make("tarware-tiny-3agvs-2pickers-partialobs-v1")
+env = gym.make("tarware-tiny-3agvs-2pickers-partialobs-chg-v1")
 ```
 
 The observation space and the action space are accessed using:
@@ -169,6 +192,6 @@ If you use this environment, consider citing:
       archivePrefix={arXiv},
       primaryClass={cs.LG}
 }
-
 ```
 
+![SexyCat](docs/img/IMG_5208.gif)
