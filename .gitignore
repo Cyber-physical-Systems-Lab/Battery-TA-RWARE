@@ -252,4 +252,4 @@ $RECYCLE.BIN/
 /results
 *.egg-info
 *.pyc
-__pycache__/
+*/__pycache__/

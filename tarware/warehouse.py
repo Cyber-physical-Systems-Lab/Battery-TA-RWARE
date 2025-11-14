@@ -1,11 +1,11 @@
 import random
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 import gymnasium as gym
 import networkx as nx
 import numpy as np
-import pyastar2d
 from gymnasium import spaces
+from tarware.astar import astar_path
 from tarware.definitions import (Action, AgentType, Direction,
                                  RewardType, CollisionLayers)
 from tarware.spaces import observation_map
@@ -327,11 +327,13 @@ class Warehouse(gym.Env):
         grid[np.where(grid == 1)] = np.inf
         grid[np.where(grid == 0)] = 1
         adjusted_start = (start[0] + start_fix[0], start[1] + start_fix[1])
-        astar_path = pyastar2d.astar_path(grid, adjusted_start, goal, allow_diagonal=False) # returns None if cant find path
-        # astar_path = astar_path[int(np.where(astar_path == adjusted_start)[0][0]):]
-        if astar_path is not None:
-            astar_path = [tuple(x) for x in list(astar_path)] # convert back to other format
+        result = astar_path(grid, adjusted_start, goal, allow_diagonal=False) # returns None if cant find path
+        # result = result[int(np.where(result == adjusted_start)[0][0]):]
+        if result is not None:
+            astar_path = [tuple(x) for x in list(result)] # convert back to other format
             astar_path = astar_path[1 - int(grid[start[0], start[1]] > 1):]
+        else:
+            astar_path = []
 
         if astar_path:
             return [(x, y) for y, x in astar_path]
@@ -708,7 +710,7 @@ class Warehouse(gym.Env):
         indices = np.random.choice(len(self.shelfs), size=self.request_queue_size, replace=False)
         self.request_queue = [self.shelfs[i] for i in indices]
         self.observation_space_mapper.extract_environment_info(self)
-        return tuple([self.observation_space_mapper.observation(agent) for agent in self.agents]), {}
+        return tuple([self.observation_space_mapper.observation(agent) for agent in self.agents])
 
     def step(
         self, action

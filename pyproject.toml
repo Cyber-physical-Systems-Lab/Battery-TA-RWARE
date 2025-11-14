@@ -21,8 +21,7 @@ dependencies = [
     "gymnasium",
     "six==1.16.0",
     "pyglet==1.5.11",
-    "networkx==3.2.1",
-    "pyastar2d @ git+https://github.com/raulsteleac/pyastar2d_TARWARE#egg=pyastar2d_TARWARE"
+    "networkx==3.2.1"
 ]
 
 [project.optional-dependencies]
