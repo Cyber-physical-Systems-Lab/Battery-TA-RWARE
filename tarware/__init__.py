@@ -37,7 +37,7 @@ for size, obs_type, num_agvs, num_pickers in _perms:
             "num_agvs":  num_agvs,
             "num_pickers": num_pickers,
             "request_queue_size": _request_queues[size],
-            "max_inactivity_steps": 200,
+            "max_inactivity_steps": 100,
             "max_steps": 5000,
             "reward_type": RewardType.INDIVIDUAL,
             "observation_type": obs_type,

@@ -122,7 +122,6 @@ class Warehouse(gym.Env):
         reward_type: RewardType,
         normalised_coordinates: bool=False,
         observation_type: str = "global",
-        verbose_events: bool = False,
     ):
         """The robotic warehouse environment
 
@@ -218,11 +217,6 @@ class Warehouse(gym.Env):
         self.agents: List[Agent] = []
         self.stuck_counters = []
         self.renderer = None
-        self.verbose_events = verbose_events
-
-    def _event_log(self, text: str) -> None:
-        if self.verbose_events:
-            print(text)
 
     @property
     def targets_agvs(self):
@@ -336,13 +330,13 @@ class Warehouse(gym.Env):
         result = astar_path(grid, adjusted_start, goal, allow_diagonal=False) # returns None if cant find path
         # result = result[int(np.where(result == adjusted_start)[0][0]):]
         if result is not None:
-            path_result = [tuple(x) for x in list(result)] # convert back to other format
-            path_result = path_result[1 - int(grid[start[0], start[1]] > 1):]
+            astar_path = [tuple(x) for x in list(result)] # convert back to other format
+            astar_path = astar_path[1 - int(grid[start[0], start[1]] > 1):]
         else:
-            path_result = []
+            astar_path = []
 
-        if path_result:
-            return [(x, y) for y, x in path_result]
+        if astar_path:
+            return [(x, y) for y, x in astar_path]
         else:
             return []
 
@@ -583,11 +577,6 @@ class Warehouse(gym.Env):
                 self.grid[CollisionLayers.SHELVES, agent.y, agent.x] = 0
                 self.grid[CollisionLayers.CARRIED_SHELVES, agent.y, agent.x] = shelf_id
                 agent.busy = False
-                if agent.type == AgentType.AGV and picker_id:
-                    self._event_log(
-                        f"[COLLAB] step={self._cur_steps} event=LOAD agv_id={agent.id} picker_id={picker_id} "
-                        f"shelf_id={shelf_id} pos=({agent.x},{agent.y})"
-                    )
                 # New: Consume battery for loading
                 agent.battery = max(0, agent.battery - _BATTERY_CONSUMPTION_LOAD)
                 # Reward picker for loading
@@ -612,17 +601,11 @@ class Warehouse(gym.Env):
                 (agent.type == AgentType.AGV and picker_id)
                 or agent.type == AgentType.AGENT
             ) and agent.carrying_shelf is not None:
-                carried_id = agent.carrying_shelf.id
                 self.grid[CollisionLayers.SHELVES, agent.y, agent.x] = agent.carrying_shelf.id
                 self.grid[CollisionLayers.CARRIED_SHELVES, agent.y, agent.x] = 0
                 agent.carrying_shelf = None
                 agent.busy = False
                 agent.has_delivered = False
-                if agent.type == AgentType.AGV and picker_id:
-                    self._event_log(
-                        f"[COLLAB] step={self._cur_steps} event=UNLOAD agv_id={agent.id} picker_id={picker_id} "
-                        f"shelf_id={carried_id} pos=({agent.x},{agent.y})"
-                    )
                 # New: Consume battery for unloading
                 agent.battery = max(0, agent.battery - _BATTERY_CONSUMPTION_LOAD)
                 # Reward picker for unloading
@@ -674,10 +657,6 @@ class Warehouse(gym.Env):
                     rewards += 1
                 elif self.reward_type == RewardType.INDIVIDUAL:
                     rewards[agent.id - 1] += 1
-                self._event_log(
-                    f"[DELIVERY] step={self._cur_steps} agv_id={agent.id} shelf_id={shelf_id} "
-                    f"goal=({y},{x}) queue_remaining={len(self.request_queue)}"
-                )
             shelf_deliveries += 1
 
         if shelf_deliveries:

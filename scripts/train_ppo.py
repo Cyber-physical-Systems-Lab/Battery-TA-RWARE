@@ -4,7 +4,6 @@ from ray.rllib.algorithms.ppo import PPOConfig
 from train_utils import WarehouseMultiAgentEnv
 from custom_model import WarehouseMARLModel  # Import custom model
 from ray.rllib.models import ModelCatalog  # Import ModelCatalog
-from pathlib import Path
 
 # Register the custom model at module level so all worker processes can access it
 ModelCatalog.register_custom_model("warehouse_marl_model", WarehouseMARLModel)
@@ -71,17 +70,10 @@ def train():
     print("✓ Algorithm built successfully with WarehouseMARLModel!")
 
     # Run full training for 100 iterations
-    checkpoint_root = Path("checkpoints")
-    checkpoint_root.mkdir(parents=True, exist_ok=True)
     for i in range(100):
         result = algo.train()
         if (i + 1) % 10 == 0:
             print(f"Iteration {i+1}: episode_return_mean = {result['env_runners']['episode_return_mean']:.3f}")
-            checkpoint_path = algo.save(checkpoint_root)
-            print(f"✓ Checkpoint saved at iteration {i+1}: {checkpoint_path}")
-
-    final_checkpoint = algo.save(checkpoint_root)
-    print(f"✓ Final checkpoint saved at: {final_checkpoint}")
 
     algo.stop()
     print("✓ Full training completed successfully with custom WarehouseMARLModel!")
