@@ -1,6 +1,9 @@
 """
-Custom A* pathfinding implementation compatible with NumPy 2.x
-Replaces pyastar2d which has NumPy 1.x compatibility issues.
+NumPy-compatible A* pathfinding used by warehouse routing.
+
+The implementation provides Manhattan-distance heuristics, optional diagonal
+neighbors, obstacle handling for infinite-cost grid cells, and returns a NumPy
+array of (y, x) coordinates so the environment does not depend on pyastar2d.
 """
 
 from heapq import heappush, heappop

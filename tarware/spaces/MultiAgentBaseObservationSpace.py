@@ -1,3 +1,11 @@
+"""
+Base helpers for Tarware multi-agent observation builders.
+
+_VectorWriter writes fixed-width float vectors without repeated concatenation.
+MultiAgentBaseObservationSpace stores shared dimensions and coordinate
+normalization behavior used by both global and partial observation spaces.
+"""
+
 from abc import ABC
 
 import numpy as np

@@ -1,6 +1,10 @@
 """
-2D rendering of the Robotic's Warehouse
-environment using pyglet
+Pyglet renderer for Tarware grid-world episodes.
+
+The viewer draws the warehouse grid, shelves, requested shelves, goals,
+charging stations, AGVs, pickers, carried loads, heading indicators, and
+battery badges. It supports both interactive human rendering and RGB-array
+capture for videos or GIFs.
 """
 
 import math
@@ -165,7 +169,9 @@ class Viewer(object):
             x, y = shelf.x, shelf.y
             y = self.rows - y - 1  # pyglet rendering is reversed
             shelf_color = (
-                _SHELF_REQ_COLOR if shelf in env.request_queue else _SHELF_COLOR
+                _SHELF_REQ_COLOR if shelf in env.request_queue
+                else (200, 100, 200) if shelf in env.inbound_queue  # purple = inbound
+                else _SHELF_COLOR
             )
             rect = pyglet.shapes.Rectangle((self.grid_size + 1) * x + _SHELF_PADDING + 1, (self.grid_size + 1) * y + _SHELF_PADDING + 1, self.grid_size - 2 * _SHELF_PADDING, self.grid_size - 2 * _SHELF_PADDING, color=shelf_color)
             rect.draw()

@@ -17,6 +17,7 @@
 - [Environment Parameters](#environment-parameters)
   - [Naming Scheme](#naming-scheme)
   - [Custom layout](#custom-layout)
+- [PRISM simulation env (`prism` branch)](#prism-simulation-env-prism-branch)
 - [Installation](#installation)
 - [Getting Started](#getting-started)
 - [Heuristic](#heuristic)
@@ -100,6 +101,45 @@ The environment naming follows the pattern: `tarware-{size}-{num_agvs}agvs-{num_
 ## Custom layout
 
 You can customize the warehouse layout by modifying parameters in `tarware/__init__.py`, such as grid size, shelf rows/columns, and charging station positions.
+
+# PRISM simulation env (`prism` branch)
+
+This branch holds the exact `tarware/` simulation environment used for the
+PRISM experiments (Policy-shaping via Reward decomposition for Inter-agent
+Symbiosis). It is a verbatim copy of `tarware/` from the PRISM development
+repository `n7729697/robotic-symbiosis-tarware` at commit `62a30ff`. Training
+and analysis code stays in that repository. This branch only pins the
+environment, so results can be reproduced against a fixed simulator.
+
+Main additions over `main`:
+
+- **Heterogeneous package mix.** `PackageType` adds SOLO, PICKER_SOLO,
+  STANDARD, HEAVY and LARGE, each needing a different AGV/Picker coalition. The
+  PRISM experiments use the env id
+  `tarware-small-4agvs-2pickers-partialobs-chg-pkgmix-v1`.
+- **Battery / energy coupling.** A loaded AGV's movement cost now scales with
+  shelf weight (`Warehouse._movement_energy_cost`). `tarware/energy_coupling.py`
+  coordinates independent or synchronised Picker–AGV charging for the
+  heuristic. This branch also adds the `num_chargers` and
+  `battery_drain_multiplier` kwargs and the `*-chg-pkgmix-competition-v1`
+  variants. The defaults keep one charger per agent and 1x drain.
+- **Rule controller and planner baselines.** `tarware/heuristic.py` now uses
+  the charging, replanning (`replanning.py`) and role-tracking
+  (`role_assignment.py`) modules. It also adds the BMRTA, Calvo and CBBA task
+  allocators in `tarware/planners/`.
+  `heuristic_episode` now returns 7 values: `infos, global_return,
+  episode_returns, coupling, replanning, role, behavior_events`.
+- **Seeded request stream.** `Warehouse.seed(s)` now also seeds Gymnasium's
+  `np_random`, which drives outbound-request replenishment. With
+  `env.seed(s); env.reset(seed=s)`, a seed produces the same rollout in every
+  process.
+
+To check that this branch still matches the PRISM repo, run this from a
+checkout of the PRISM repo:
+
+```sh
+diff -r <path-to-Battery-TA-RWARE>/tarware tarware -x __pycache__
+```
 
 # Installation
 

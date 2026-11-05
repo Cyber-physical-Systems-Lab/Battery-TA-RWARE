@@ -56,7 +56,7 @@ if __name__ == "__main__":
     completed_episodes = 0
     for i in range(args.num_episodes):
         start = time.time()
-        infos, global_episode_return, episode_returns = heuristic_episode(env.unwrapped, args.render, seed+i, save_gif=False, gif_path=f"episode_{i}.gif")
+        infos, global_episode_return, episode_returns, *_ = heuristic_episode(env.unwrapped, args.render, seed+i, save_gif=False, gif_path=f"episode_{i}.gif")
         end = time.time()
         last_info = info_statistics(infos, global_episode_return, episode_returns)
         last_info["overall_pick_rate"] = last_info.get("total_deliveries") * 3600 / (5 * last_info['episode_length'])

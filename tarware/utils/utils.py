@@ -1,3 +1,11 @@
+"""
+Small utility functions shared by routing, layout, and heuristic code.
+
+The helpers flatten nested lists, split work into near-equal groups, map a
+single path step to the next primitive turn/forward action, and group adjacent
+shelf coordinates into rack sections for picker assignment and role metrics.
+"""
+
 from tarware.definitions import Action, Direction
 
 def flatten_list(l):

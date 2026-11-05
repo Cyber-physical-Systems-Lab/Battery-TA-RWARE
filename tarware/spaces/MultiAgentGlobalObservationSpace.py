@@ -1,3 +1,13 @@
+"""
+Global observation builder for Tarware agents.
+
+Each agent receives a fixed-width vector containing its own state first,
+followed by the other agents, shelf request/inbound bits for all rack
+locations, and normalized battery levels for every agent. AGV entries include
+carrying/outbound and pending-load-action state; coordinates can be absolute or
+normalized by the environment.
+"""
+
 import numpy as np
 from gymnasium import spaces
 
@@ -14,6 +24,7 @@ class MultiAgentGlobalObservationSpace(MultiAgentBaseObservationSpace):
         self.obs_lengths = [self.obs_length for _ in range(self.num_agents)]
         self._current_agents_info = []
         self._current_shelves_info = []
+        self._current_batteries = []
 
         ma_spaces = []
         for obs_length in self.obs_lengths:
@@ -35,23 +46,34 @@ class MultiAgentGlobalObservationSpace(MultiAgentBaseObservationSpace):
         self.obs_bits_for_pickers = (spaces.flatdim(location_space)  + spaces.flatdim(location_space)) * self.num_pickers
         self.obs_bits_per_shelf = 1 * self.shelf_locations
         self.obs_bits_for_requests = 1 * self.shelf_locations
+        # Battery level (normalized 0-1) for each agent — enables energy-aware policies
+        self.obs_bits_for_batteries = self.num_agents
         self.obs_length = (
             self.obs_bits_for_agvs
             + self.obs_bits_for_pickers
             + self.obs_bits_per_shelf
             + self.obs_bits_for_requests
+            + self.obs_bits_for_batteries
         )
 
     def extract_environment_info(self, environment):
         self._current_agents_info = []
         self._current_shelves_info = []
+        self._current_batteries = []
+
+        # Extract battery levels (normalized to [0, 1])
+        for agent in environment.agents:
+            self._current_batteries.append(agent.battery / 100.0)
 
         # Extract agents info
         for agent in environment.agents:
             agent_info = []
-            if agent.type == AgentType.AGV:
+            if agent.type in (AgentType.AGV, AgentType.AGENT):
                 if agent.carrying_shelf:
-                    agent_info.extend([1, int(agent.carrying_shelf in environment.request_queue)])
+                    # bit 1: carrying a shelf; bit 2: 1=outbound, 0=inbound
+                    is_outbound = int(agent.carrying_shelf in environment.request_queue
+                                      or agent.carrying_shelf.direction.name == "OUT")
+                    agent_info.extend([1, is_outbound])
                 else:
                     agent_info.extend([0, 0])
                 agent_info.extend([agent.req_action == Action.TOGGLE_LOAD])
@@ -67,7 +89,12 @@ class MultiAgentGlobalObservationSpace(MultiAgentBaseObservationSpace):
             for (x, y) in group:
                 id_shelf = environment.grid[CollisionLayers.SHELVES, x, y]
                 if id_shelf!=0:
-                    self._current_shelves_info.extend([1.0 , int(environment.shelfs[id_shelf - 1] in environment.request_queue)])
+                    shelf = environment.shelfs[id_shelf - 1]
+                    # bit 1: outbound requested; bit 2: inbound (shelf away, goal has it)
+                    self._current_shelves_info.extend([
+                        int(shelf in environment.request_queue),
+                        int(shelf in environment.inbound_queue),
+                    ])
                 else:
                     self._current_shelves_info.extend([0, 0])
 
@@ -78,4 +105,6 @@ class MultiAgentGlobalObservationSpace(MultiAgentBaseObservationSpace):
             if agent_id != agent.id - 1:
                 obs.write(agent_info)
         obs.write(self._current_shelves_info)
+        # Battery levels for all agents (energy coupling awareness)
+        obs.write(self._current_batteries)
         return obs.vector

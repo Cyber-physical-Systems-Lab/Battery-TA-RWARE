@@ -21,7 +21,9 @@ dependencies = [
     "gymnasium",
     "six==1.16.0",
     "pyglet==1.5.11",
-    "networkx==3.2.1"
+    "networkx==3.2.1",
+    "imageio",  # tarware.heuristic (GIF export)
+    "scipy",    # tarware.planners (MILP-based BMRTA / Calvo)
 ]
 
 [project.optional-dependencies]
@@ -30,5 +32,6 @@ test = ["pytest"]
 [project.urls]
 Repository  = "https://github.com/raulsteleac/task-assignment-robotic-warehouse.git"
 
-[tool.setuptools]
-packages = ["tarware"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tarware*"]
