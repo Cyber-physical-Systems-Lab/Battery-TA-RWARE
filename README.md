@@ -6,6 +6,23 @@
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://GitHub.com/Naereen/StrapDown.js/graphs/commit-activity)
 [![GitHub license](https://img.shields.io/github/license/Naereen/StrapDown.js.svg)](https://github.com/Naereen/StrapDown.js/blob/master/LICENSE)
 
+> **Battery-TA-RWARE v2 (branch `v2-dev`, in development).** This branch adds `battery_tarware`, a
+> standalone kernel for heterogeneous, battery-constrained multi-robot cooperation (cooperative
+> SOLO/STANDARD/LARGE tasks with AGV + picker crews, calibrated battery and charging, tiled layouts,
+> external arrivals, charger capacity), with read-only state views, a task-dependency model and
+> trajectory fingerprints. The original Gymnasium environment below (`tarware`, v1.1.0) is unchanged
+> and frozen at tag `legacy-v1.1.0`.
+>
+> ```python
+> import battery_tarware as bt
+> env = bt.make_tiled_warehouse(tile_rows=2, tile_cols=3, num_agvs=19, num_pickers=7)
+> env.reset(seed=42)
+> done, info = env.step([0] * len(env.agents))      # macro action per robot; 0 = no-op
+> ```
+> Roadmap and design: [docs/v2/ROADMAP.md](docs/v2/ROADMAP.md) ·
+> [docs/v2/SIMULATION_CONTRACTS_V1.md](docs/v2/SIMULATION_CONTRACTS_V1.md) ·
+> [docs/v2/PROVENANCE.md](docs/v2/PROVENANCE.md). Tests: `python -m pytest -q tests/`.
+
 <h1>Table of Contents</h1>
 
 - [Environment Description](#environment-description)

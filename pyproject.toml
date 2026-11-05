@@ -1,34 +1,41 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name="tarware"
-version="1.1.0"
-description="Task-Assignment Multi-Robot Warehouse environment for reinforcement learning"
-readme = {file = "README.txt", content-type = "text/markdown"}
+name = "battery-tarware"
+version = "2.0.0.dev0"
+description = "Battery-TA-RWARE: heterogeneous, battery-constrained multi-robot warehouse simulator and benchmark"
+readme = {file = "README.md", content-type = "text/markdown"}
 authors = [
   {name = "Raul Steleac", email = "raulsteleac@ed.ac.uk"},
+  {name = "Cyber-physical Systems Lab, Uppsala University"},
 ]
 license = {file = "LICENSE"}
-classifiers=[
-        "Development Status :: 4 - Beta",
-        "Intended Audience :: Developers",
-        "Programming Language :: Python :: 3.9",
-    ]
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+]
+# battery_tarware (v2 kernel) needs only numpy + networkx. gymnasium is kept for the legacy
+# `tarware` v1 Gymnasium environment, which is shipped unchanged next to the kernel.
 dependencies = [
-    "numpy",
+    "numpy>=1.23",
+    "networkx>=3.0",
     "gymnasium",
-    "six==1.16.0",
-    "pyglet==1.5.11",
-    "networkx==3.2.1"
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+render = ["six>=1.16", "pyglet==1.5.11"]
+test = ["pytest>=7"]
 
 [project.urls]
-Repository  = "https://github.com/raulsteleac/task-assignment-robotic-warehouse.git"
+Repository = "https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE"
+Upstream = "https://github.com/raulsteleac/task-assignment-robotic-warehouse.git"
 
-[tool.setuptools]
-packages = ["tarware"]
+[tool.setuptools.packages.find]
+include = ["battery_tarware*", "tarware*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json"]
