@@ -217,3 +217,5 @@ __pycache__/
 /=*
 # Explicit example (harmless to keep):
 /=4.3.0/
+# Battery-TA-RWARE v2: the test suite is kept out of the published repository
+/tests/

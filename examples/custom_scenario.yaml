@@ -1,0 +1,74 @@
+# A custom scenario: everything about robots, tasks, chargers and demand is configuration.
+# Load with  battery_tarware.make("examples/custom_scenario.yaml")  (needs pyyaml).
+name: hospital_logistics
+description: Tug robots, a lifter and a nurse-assist arm deliver supplies; sterile items need two carriers.
+
+map:
+  generator: {rack_rows: 2, rack_cols: 3, rack_height: 3, goals: 3, docks: 4, aisle_width: 2}
+
+robot_types:
+  - name: tug                          # fast, light, small battery
+    capabilities: [transport]
+    speed: 1.0
+    payload_kg: 40
+    zones: [aisle, storage, goal, dock]
+    zones_loaded: [aisle, goal, dock]
+    energy: {capacity_wh: 900, idle_w: 15, move_w: 110, payload_w_per_kg: 1.0, handling_w: 40, max_charge_w: 2000}
+    charger_types: [fast, slow]
+  - name: lifter                       # slow, strong, only slow chargers
+    capabilities: [transport, lift]
+    speed: 0.5
+    payload_kg: 150
+    zones: [aisle, storage, goal, dock]
+    zones_loaded: [aisle, goal, dock]
+    energy: {capacity_wh: 3000, idle_w: 30, move_w: 300, payload_w_per_kg: 1.5, handling_w: 200, max_charge_w: 1000}
+    charger_types: [slow]
+    failure: {rate: 0.0005, repair_ticks: 40}
+  - name: arm                          # manipulates, sees only 4 cells around it, noisy localization
+    capabilities: [pick, manipulate]
+    speed: 0.7
+    handling_speed: 1.5
+    zones: [aisle, goal, dock]
+    sensing_range: 4
+    comm_range: 6
+    localization_noise: 0.3
+    energy: {capacity_wh: 1200, idle_w: 25, move_w: 120, payload_w_per_kg: 0, handling_w: 180, max_charge_w: 1500}
+
+fleet:
+  - {type: tug, count: 4, initial_soc: [0.4, 1.0]}
+  - {type: tug, name: tug_old, count: 1, initial_soc: 0.7, overrides: {speed: 0.8, energy: {capacity_wh: 500}}}
+  - {type: lifter, count: 1}
+  - {type: arm, count: 2}
+
+charger_types:
+  - {name: fast, power_w: 3000, share: 1}
+  - {name: slow, power_w: 800, share: 1}
+
+task_types:
+  - name: supplies                     # one tug, an arm loads it, nobody needed at the ward
+    carrier_role: carrier
+    weight: {kind: uniform, low: 2, high: 30}
+    deadline: 400
+    roles:
+      - {name: carrier, capability: transport, presence: on_cell}
+      - {name: loader, capability: pick}
+    stages:
+      - {name: load, at: origin, roles: [carrier, loader], duration: 3}
+      - {name: drop, at: destination, roles: [carrier], duration: 2}
+  - name: sterile_cart                 # two carriers move it together (joint transport) under an arm's eye
+    carrier_role: carriers
+    priority: 3
+    weight: {kind: normal, mean: 60, std: 10, low: 40, high: 80}
+    roles:
+      - {name: carriers, capability: transport, count: 2, presence: on_cell}
+      - {name: handler, capability: manipulate, stay: true}
+    stages:
+      - {name: secure, at: origin, roles: [carriers, handler], duration: 4}
+      - {name: hand_over, at: destination, roles: [carriers, handler], duration: 5}
+
+demand:
+  - {kind: poisson, mix: {supplies: 0.85, sterile_cart: 0.15}, rates: [[0, 0.02], [600, 0.05], [1200, 0.02]]}
+
+rewards: {task_completed: 1.0, late_per_tick: -0.005, energy_per_kwh: -0.1, stranded: -5.0}
+observation: {task_slots: 12, task_visibility: global}
+max_steps: 2000
