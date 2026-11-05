@@ -4,38 +4,38 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "battery-tarware"
-version = "2.0.0.dev0"
-description = "Battery-TA-RWARE: heterogeneous, battery-constrained multi-robot warehouse simulator and benchmark"
+version = "2.0.0"
+description = "Battery-TA-RWARE: heterogeneous multi-robot cooperation under battery constraints (Gymnasium + PettingZoo)"
 readme = {file = "README.md", content-type = "text/markdown"}
-authors = [
-  {name = "Raul Steleac", email = "raulsteleac@ed.ac.uk"},
-  {name = "Cyber-physical Systems Lab, Uppsala University"},
-]
+authors = [{name = "Xuezhi Niu"}, {name = "Cyber-physical Systems Lab, Uppsala University"}]
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
+keywords = ["multi-robot", "task allocation", "coalition formation", "warehouse", "battery", "gymnasium",
+            "pettingzoo", "reinforcement learning", "multi-agent path finding"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-# battery_tarware (v2 kernel) needs only numpy + networkx. gymnasium is kept for the legacy
-# `tarware` v1 Gymnasium environment, which is shipped unchanged next to the kernel.
 dependencies = [
     "numpy>=1.23",
-    "networkx>=3.0",
-    "gymnasium",
+    "gymnasium>=1.0",
 ]
 
 [project.optional-dependencies]
-render = ["six>=1.16", "pyglet==1.5.11"]
-test = ["pytest>=7"]
+pettingzoo = ["pettingzoo>=1.24"]
+yaml = ["pyyaml>=6.0"]
+render = ["matplotlib>=3.6"]
+test = ["pytest>=7", "pettingzoo>=1.24", "pyyaml>=6.0"]
+all = ["pettingzoo>=1.24", "pyyaml>=6.0", "matplotlib>=3.6"]
 
 [project.urls]
 Repository = "https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE"
-Upstream = "https://github.com/raulsteleac/task-assignment-robotic-warehouse.git"
 
 [tool.setuptools.packages.find]
-include = ["battery_tarware*", "tarware*"]
+include = ["battery_tarware*"]
 
-[tool.setuptools.package-data]
-"*" = ["*.json"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]

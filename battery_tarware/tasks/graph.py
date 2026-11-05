@@ -4,7 +4,6 @@ from __future__ import annotations
 import heapq
 from typing import Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
-from battery_tarware.tasks.spec import Capability, TaskSpec
 
 
 class TaskGraphError(ValueError):
@@ -12,10 +11,11 @@ class TaskGraphError(ValueError):
 
 
 class TaskGraph:
-    """Immutable DAG over TaskSpecs. Tie-breaks are by task id, so every order is deterministic."""
+    """Immutable DAG over task objects with ``id``, ``depends_on`` and (optionally) ``required``
+    = {capability: count}. Tie-breaks are by task id, so every order is deterministic."""
 
-    def __init__(self, tasks: Iterable[TaskSpec], fleet: Optional[Mapping[Capability, int]] = None):
-        self._tasks: Dict[int, TaskSpec] = {}
+    def __init__(self, tasks: Iterable, fleet: Optional[Mapping[str, int]] = None):
+        self._tasks: Dict[int, object] = {}
         for t in tasks:
             if t.id in self._tasks:
                 raise TaskGraphError("duplicate task id %d" % t.id)
@@ -32,10 +32,10 @@ class TaskGraph:
                 self._children[d] = self._children[d] + (t.id,)
         self._order = self._toposort()
 
-    def _check_feasible(self, fleet: Mapping[Capability, int]) -> None:
+    def _check_feasible(self, fleet: Mapping[str, int]) -> None:
         bad = []
         for t in self._tasks.values():
-            short = {c.value: (n, fleet.get(c, 0)) for c, n in t.required.items() if n > fleet.get(c, 0)}
+            short = {c: (n, fleet.get(c, 0)) for c, n in t.required.items() if n > fleet.get(c, 0)}
             if short:
                 bad.append((t.id, short))
         if bad:
@@ -61,7 +61,7 @@ class TaskGraph:
     def __len__(self) -> int:
         return len(self._tasks)
 
-    def __getitem__(self, task_id: int) -> TaskSpec:
+    def __getitem__(self, task_id: int):
         return self._tasks[task_id]
 
     def __iter__(self):

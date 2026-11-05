@@ -1,18 +1,36 @@
 # Changelog
 
-## 2.0.0.dev0 (branch `v2-dev`, unreleased)
+## 2.0.0
 
-- Add `battery_tarware`, the v2 simulation kernel, imported from RendeCoord at tag `bt-g0-baseline`
-  (79b5a90) with the package renamed from `tarware`; simulation logic unchanged
-  (see `docs/v2/PROVENANCE.md`).
-- Add `battery_tarware.interfaces`: read-only, value-typed `StateView` / `LayoutView` (schema 1).
-- Add `battery_tarware.tasks`: `TaskSpec`, `TaskGraph` (dependency DAG with cycle, unknown-dependency
-  and fleet-feasibility checks; deterministic order), task lifecycle state machine. Not wired into the
-  kernel; frozen profiles do not import it.
-- Add `battery_tarware.testing`: per-tick trajectory fingerprints (same definition as RendeCoord G0).
-- Tests: kernel independence (no imports of `tarware`/RendeCoord; runs in isolation), frozen-profile
-  fingerprints (6 RendeCoord G0 env-only runs reproduced tick by tick), state views, task model.
-- Packaging: distribution renamed `battery-tarware`, version 2.0.0.dev0; fixed `readme` (pointed at
-  a non-existent README.txt); `six`/`pyglet` moved to the `render` extra; both `battery_tarware` and
-  the unchanged legacy `tarware` are packaged.
-- The legacy `tarware` v1.1.0 Gymnasium environment is unchanged (tag `legacy-v1.1.0`).
+A new engine, `battery_tarware`, replaces the TA-RWARE v1 `tarware` package. v1 is preserved at
+git tag `legacy-v1.1.0`.
+
+- **Heterogeneity as configuration**:
+  - robot types with free-form capabilities, speed, payload, handling speed, allowed zones (empty
+    and loaded), a battery and power model, charger compatibility, sensing, communication and
+    localization noise, and breakdowns;
+  - per-group overrides for heterogeneity within a type.
+- **Cooperative tasks**:
+  - roles with capability, count and presence rules;
+  - ordered synchronized stages at origin, destination or custom zones;
+  - carrier roles with joint transport;
+  - stage-by-stage recruitment;
+  - payload drop and recovery;
+  - jobs with dependency DAGs and location chaining.
+- **Demand**: backlog, Poisson (piecewise rates), batch and trace streams, with task mixes.
+- **Feasible coalitions** computed by the environment: capability, carrier capacity, reachability
+  and an energy reserve.
+- **Interfaces**:
+  - Gymnasium 1.x environment (`battery_tarware/{Basic,Intermediate,Advanced,Warehouse}-v2`),
+    macro and primitive action modes, action masks, typed event log;
+  - PettingZoo ParallelEnv;
+  - frozen `StateView` with a primitive-array DTO for native coordinators.
+- **Movement**:
+  - PIBT with the dead-end swap operation in macro mode, and conflict-free simultaneous moves in
+    primitive mode;
+  - maps from ASCII (custom zones, optional one-way cells) or a generator (aisle width, one-way grids).
+- **Scenarios**: three tiers (basic, intermediate, advanced).
+- **Coordinators**: greedy coalition baseline, masked random baseline, and documented dispatching
+  rules (FIFO, EDD, SPT, CR, priority).
+- **Tests**: 90+ tests, including Gymnasium `check_env` and PettingZoo `parallel_api_test`.
+- **Dependencies**: base install needs only numpy and gymnasium.
