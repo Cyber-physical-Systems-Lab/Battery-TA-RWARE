@@ -37,6 +37,11 @@ P_WAIT, P_UP, P_DOWN, P_LEFT, P_RIGHT, P_INTERACT, P_RELEASE = range(7)
 PRIMITIVE_ACTIONS = ("wait", "up", "down", "left", "right", "interact", "release")
 
 
+def _heading(a, b) -> int:
+    d = (b[0] - a[0], b[1] - a[1])
+    return MOVES.index(d) if d in MOVES else 1
+
+
 @dataclass
 class Charger:
     id: int
@@ -810,6 +815,7 @@ class Simulator:
             lead = self.robots[u.id]
             if u.next is not None and u.next != u.cell:
                 for m in u.members:
+                    m.heading = _heading(m.cell, u.next)
                     m.cell, m.moved = u.next, True
                     m.distance += 1
                 if self.carrying(lead):
@@ -875,6 +881,7 @@ class Simulator:
             if m in ok:
                 for i in group:
                     rr = self.robots[i]
+                    rr.heading = _heading(rr.cell, cell)
                     rr.cell = cell
                     rr.moved = True
                     rr.distance += 1
