@@ -1,4 +1,4 @@
-"""Render the annotated explanation figure (docs/img/explanation.png).
+"""Render the annotated explanation figure (docs/img/explanation.png), the map rotated 90° (landscape).
 
     python docs/make_figure.py          # needs Pillow
 
@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import sys
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -48,10 +49,6 @@ def elements(sim):
     occupied = {r.cell for r in sim.robots}
     occupied |= {t.stage_cell for t in sim.tasks.values() if t.carried and not t.done}   # keep framed goals apart
     out = {label: cell for label, cell in found.values()}
-    lone = [r for r in sim.robots if sum(o.cell == r.cell for o in sim.robots) == 1]
-    if lone:
-        r = lone[len(lone) // 2]
-        out["battery badge"] = ("badge", r.cell)
     for t in sim.tasks.values():
         if t.done or t.state.value == "pending":
             continue
@@ -95,23 +92,27 @@ def render(cfg, tick, seed=0):
     for _ in range(tick):
         env.step(c.act(env))
     sim = env.sim
-    world = Image.fromarray(rgb_array(sim, cell_px=CELL, crew_lines=True))
+    arr = rgb_array(sim, cell_px=CELL, crew_lines=True)
+    WP = arr.shape[1]
+    world = Image.fromarray(np.ascontiguousarray(np.rot90(arr)))   # rotated 90 degrees: landscape
     img = Image.new("RGB", (world.width + 2 * MARGIN, world.height + TOP + 50), (255, 255, 255))
     img.paste(world, (MARGIN, TOP))
     d = ImageDraw.Draw(img)
     f_title, f_lab, f_note = font(20), font(14), font(13)
-    d.text((img.width / 2, 18), "Battery-TA-RWARE: one tick of the basic scenario", fill="black",
+    d.text((img.width / 2, 18), "Battery-TA-RWARE: one tick of the basic scenario (map rotated 90°)", fill="black",
            font=f_title, anchor="mm")
     d.text((img.width / 2, 42), "shape = robot type (hexagon AGV, diamond picker)   colour = activity   "
-           "tick = heading   thin blue line = crew member heading to its task", fill=(70, 70, 70), font=f_note,
+           "badge = battery   tick = heading   blue line = crew member heading to its task", fill=(70, 70, 70), font=f_note,
            anchor="mm")
 
     def px(cell):
         g = CELL + 1
         if cell[0] == "badge":                                 # the battery badge, bottom right of the cell
             c = cell[1]
-            return MARGIN + 1 + c[1] * g + CELL - 8, TOP + 1 + c[0] * g + CELL - 5
-        return MARGIN + 1 + cell[1] * g + CELL / 2, TOP + 1 + cell[0] * g + CELL / 2
+            ox, oy = 1 + c[1] * g + CELL - 8, 1 + c[0] * g + CELL - 5
+        else:
+            ox, oy = 1 + cell[1] * g + CELL / 2, 1 + cell[0] * g + CELL / 2
+        return MARGIN + oy, TOP + (WP - 1 - ox)                    # same rotation as the image
 
     items = elements(sim).items()
     mid = MARGIN + world.width / 2

@@ -27,7 +27,7 @@ robot_types:
     payload_kg: 80
     zones: [aisle, storage, goal, dock, packing]
     zones_loaded: [aisle, goal, dock, packing]      # cannot drive under racks while loaded
-    energy: {capacity_wh: 1000, idle_w: 20, move_w: 140, payload_w_per_kg: 1.5, handling_w: 40}
+    energy: {capacity_wh: 300, idle_w: 20, move_w: 140, payload_w_per_kg: 1.5, handling_w: 40}
   - name: picker
     capabilities: [pick, pack]
     speed: 0.5                                      # one cell every two ticks
@@ -35,13 +35,13 @@ robot_types:
     zones: [aisle, dock, packing]
     charger_types: [standard]                       # cannot use the fast chargers
     sensing_range: 5                                # sees robots within 5 cells only
-    energy: {capacity_wh: 600, idle_w: 15, move_w: 90, handling_w: 120}
+    energy: {capacity_wh: 250, idle_w: 15, move_w: 90, handling_w: 120}
     failure: {rate: 0.0002, repair_ticks: 30}
 
 # 3. Fleet: how many of each, initial charge, per-group overrides
 fleet:
   - {type: agv, count: 5, initial_soc: [0.5, 1.0]}
-  - {type: agv, name: agv_old, count: 1, overrides: {energy: {capacity_wh: 500}}}
+  - {type: agv, name: agv_old, count: 1, overrides: {energy: {capacity_wh: 180}}}
   - {type: picker, count: 3}
 
 # 4. Chargers: types, power and share of the docks

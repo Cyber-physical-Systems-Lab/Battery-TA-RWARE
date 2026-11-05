@@ -22,7 +22,7 @@ from battery_tarware.env import BatteryTarwareEnv
 
 
 class BatteryTarwareParallelEnv(ParallelEnv):
-    metadata = {"render_modes": ["rgb_array", "ansi", "human"], "name": "battery_tarware_v1"}
+    metadata = {"render_modes": ["rgb_array", "ansi", "human"], "name": "battery_tarware_v2"}
 
     def __init__(self, scenario="basic", render_mode: Optional[str] = None, reward_mode: str = "individual",
                  **overrides: Any):

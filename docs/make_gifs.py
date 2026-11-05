@@ -1,4 +1,5 @@
-"""Render the README animations (docs/img/*.gif) with the greedy baseline.
+"""Render the four README animations (docs/img/*.gif): large versions of basic, intermediate,
+advanced and the tutorial scenario, run by the greedy baseline.
 
     python docs/make_gifs.py            # needs Pillow (pip install pillow)
 
@@ -12,6 +13,7 @@ look). This script adds a title bar and a legend:
 """
 from __future__ import annotations
 
+import copy
 import os
 import sys
 
@@ -20,7 +22,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import battery_tarware as bt  # noqa: E402
-from battery_tarware.rendering import legend, regular_polygon, rgb_array  # noqa: E402
+from battery_tarware.rendering import legend, regular_polygon, rgb_array, robot_activity  # noqa: E402
 
 OUT = os.path.join(os.path.dirname(__file__), "img")
 CELL = 24
@@ -80,19 +82,75 @@ def frame(env, title):
     return img
 
 
-def large_config():
-    """The basic scenario scaled up 3x: an 18-block warehouse, 18 AGVs and 9 pickers."""
-    cfg = bt.get_scenario("basic")
-    cfg["name"] = "basic_large"
-    cfg["map"] = {"generator": {"rack_rows": 3, "rack_cols": 6, "rack_height": 5, "goals": 6, "docks": 8}}
+def scale(cfg, k, generator=None, demand=None, initial_soc=None):
+    """A large version of a scenario: k times the fleet, the demand (or ``demand`` times) and the
+    task board; a bigger generated map, or the ASCII map tiled k times side by side."""
+    cfg = copy.deepcopy(cfg)
+    cfg["name"] = "%s (large)" % cfg["name"]
+    if generator is not None:
+        cfg["map"] = {"generator": generator}
+    else:
+        rows = cfg["map"]["ascii"]
+        rows = rows.strip("\n").splitlines() if isinstance(rows, str) else list(rows)
+        cfg["map"] = dict(cfg["map"], ascii=[r * k for r in rows])
     for group in cfg["fleet"]:
-        group["count"] *= 3
-    cfg["demand"][0]["open"] *= 3
-    cfg["observation"] = {"task_slots": 32}
+        group["count"] *= k
+        if initial_soc is not None:
+            group["initial_soc"] = initial_soc
+    f = k if demand is None else demand
+    for d in cfg["demand"]:
+        if "open" in d:
+            d["open"] = int(round(d["open"] * f))
+        if "rate" in d:
+            d["rate"] *= f
+        if "rates" in d:
+            d["rates"] = [[t, r * f] for t, r in d["rates"]]
+        if "count" in d:
+            d["count"] = int(round(d["count"] * f))
+    obs = dict(cfg.get("observation", {}))
+    obs["task_slots"] = obs.get("task_slots", 16) * k
+    cfg["observation"] = obs
     return cfg
 
 
-def record(scenario, frames, every, seed=0, warmup=0, name=None, **overrides):
+def large_scenarios():
+    """The four README animations: every scenario scaled up (about 18-27 robots each)."""
+    import yaml
+    tutorial = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "..", "examples", "tutorial.yaml")))
+    return {
+        # 3x: 18 AGVs, 9 pickers; part-charged at the start so the shared docks are contested
+        "basic": scale(bt.get_scenario("basic"), 3, initial_soc=[0.25, 0.6],
+                       generator={"rack_rows": 4, "rack_cols": 7, "rack_height": 8, "goals": 7, "docks": 8}),
+        # 2x: 12 light + 4 heavy AGVs, 10 pickers
+        "intermediate": scale(bt.get_scenario("intermediate"), 2,
+                              generator={"rack_rows": 4, "rack_cols": 7, "rack_height": 8, "goals": 7, "docks": 12}),
+        # 2x fleet on the map tiled twice; 1.5x demand keeps the greedy baseline near balance
+        "advanced": scale(bt.get_scenario("advanced"), 2, demand=1.5),
+        # 2x
+        "tutorial": scale(tutorial, 2),
+    }
+
+
+def _charging_window(scenario, seed, length, **overrides):
+    """Start tick of the window with the most robots charging or heading to a charger."""
+    env = bt.make(scenario, **overrides)
+    coordinator = bt.GreedyCoalitionCoordinator("fifo")
+    env.reset(seed=seed)
+    coordinator.reset(env)
+    counts = []
+    while True:
+        _, _, terminated, truncated, _ = env.step(coordinator.act(env))
+        counts.append(sum(robot_activity(env.sim, r) in ("charging", "to_charger") for r in env.sim.robots))
+        if terminated or truncated:
+            break
+    c = np.concatenate([[0], np.cumsum(counts)])
+    sums = c[length:] - c[:-length]
+    return int(np.argmax(sums)), int(sums.max())
+
+
+def record(scenario, frames, every, seed=0, name=None, title=None, **overrides):
+    """Record ``frames`` frames (one every ``every`` ticks) over the stretch with the most charging."""
+    warmup, charge_ticks = _charging_window(scenario, seed, frames * every, **overrides)
     env = bt.make(scenario, **overrides)
     coordinator = bt.GreedyCoalitionCoordinator("fifo")
     env.reset(seed=seed)
@@ -101,17 +159,14 @@ def record(scenario, frames, every, seed=0, warmup=0, name=None, **overrides):
     for t in range(warmup + frames * every):
         env.step(coordinator.act(env))
         if t >= warmup and (t - warmup) % every == 0:
-            images.append(frame(env, name or scenario).convert("P", palette=Image.ADAPTIVE, colors=96))
+            images.append(frame(env, title or name or scenario).convert("P", palette=Image.ADAPTIVE, colors=96))
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, "%s.gif" % (name or scenario))
     images[0].save(path, save_all=True, append_images=images[1:], duration=120, loop=0, optimize=True)
-    print(path, "%.0f kB" % (os.path.getsize(path) / 1024))
+    print(path, "%.0f kB" % (os.path.getsize(path) / 1024), "ticks %d-%d" % (warmup, warmup + frames * every),
+          "charging robot-ticks %d" % charge_ticks)
 
 
 if __name__ == "__main__":
-    record(large_config(), frames=160, every=1, warmup=300, name="large")
-    record("basic", frames=180, every=1, warmup=100)
-    record("intermediate", frames=180, every=2, warmup=1000)   # demand peak
-    record("advanced", frames=180, every=2, warmup=850)
-    record(os.path.join(os.path.dirname(__file__), "..", "examples", "tutorial.yaml"), frames=180, every=1,
-           warmup=1050, name="tutorial")
+    for name, cfg in large_scenarios().items():
+        record(cfg, frames=160, every=1 if name in ("basic", "tutorial") else 2, name=name, title=cfg["name"])

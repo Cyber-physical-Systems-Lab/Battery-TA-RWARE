@@ -36,8 +36,13 @@ v1 is preserved on branch `v1` (the last v1 `main`, including the PRISM environm
 - **Scenarios**: three tiers (basic, intermediate, advanced).
 - **Coordinators**: greedy coalition baseline, masked random baseline, and documented dispatching
   rules (FIFO, EDD, SPT, CR, priority).
+- **Rendering** in the TA-RWARE style (numpy only):
+  - polygon shape per robot type and colour per activity (idle, travelling, waiting, working,
+    carrying, heading to a charger, charging, failed, stranded);
+  - requested shelves, delivery targets, heading tick and battery badge.
 - **Documentation**:
-  - README with animations and a step-by-step scenario tutorial
+  - README with an annotated explanation figure, four large-scale animations, the action and
+    observation spaces, dynamics and rewards, and a step-by-step scenario tutorial
     ([examples/tutorial.yaml](examples/tutorial.yaml));
   - configuration reference;
   - simulation semantics;
