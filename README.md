@@ -41,7 +41,7 @@ configured:
 # Environment description
 
 A team of heterogeneous robots serves a stream of warehouse tasks on a grid. In the basic
-scenario, AGVs carry shelves and pickers load them, much as in TA-RWARE. Neither group can finish
+scenario, AGVs carry totes and picking robots load them at the shelves, much as in TA-RWARE. Neither group can finish
 an order alone, so the robots have to meet, at the right shelf and at the right time. Every robot
 runs on a battery that it has to recharge at a limited number of shared docks.
 
@@ -50,6 +50,16 @@ The three built-in tiers add one kind of difficulty at a time. *Basic* couples t
 four capability types, custom zones, dependency DAGs, deadlines and breakdowns. Everything is
 configuration, so the same engine runs your own fleets and tasks
 ([build your own scenario](#build-your-own-scenario)).
+
+The built-in robot types stand for roles found in automated warehouses:
+
+| Robot type | Real-world counterpart | What it does here |
+|---|---|---|
+| `agv`, `tote_agv`, `pallet_agv` | goods-to-person AGV / AMR | carries a tote, shelf or pallet; cannot pick items itself |
+| `picking_robot`, `fast_picking_robot` | mobile piece-picking robot (mobile base + arm + gripper) | drives up beside a shelf and picks the order items into the AGV's tote; puts returned items back; carries nothing |
+| `forklift` | autonomous forklift | lifts heavy pallets: receiving, put-away, relocation |
+| `mobile_manipulator` | mobile manipulator at a workstation | unloads at receiving and handles goods at packing |
+| `inventory_drone` | indoor inventory drone | scans shelves (cycle counts) and checks orders in the quality-check zone; small battery, noisy localization |
 
 The environment works out which teams *can* do a task: capability, carrier capacity,
 reachability and energy reserve. Your coordinator or learning agent decides who actually does
@@ -62,27 +72,27 @@ the greedy baseline. Each shows the stretch of its episode with the most chargin
 
 <p align="center">
   <img src="docs/img/basic.gif" width="820" alt="basic scenario, large"><br>
-  <b>basic</b> (3×: 18 AGVs, 9 pickers, 4 × 7 rack blocks of 2 × 8 shelves). Two roles must meet: an AGV and a picker at the shelf for
+  <b>basic</b> (3×: 18 AGVs, 9 picking robots, 4 × 7 rack blocks of 2 × 8 shelves). Two roles must meet: an AGV and a picking robot at the shelf for
   every order, again for the return. The robots start part-charged, so the 8 docks are contested.
 </p>
 
 <p align="center">
   <img src="docs/img/intermediate.gif" width="820" alt="intermediate scenario, large"><br>
-  <b>intermediate</b> (2×: light and heavy AGVs, fast and standard pickers, 4 × 7 rack blocks of 2 × 8 shelves). Heterogeneity within
+  <b>intermediate</b> (2×: tote and pallet AGVs, fast and standard picking robots, 4 × 7 rack blocks of 2 × 8 shelves). Heterogeneity within
   roles, pallets only heavy AGVs can lift, oversize loads carried jointly by two AGVs, peak demand,
   fast chargers that heavy AGVs cannot use.
 </p>
 
 <p align="center">
   <img src="docs/img/advanced.gif" width="820" alt="advanced scenario, large"><br>
-  <b>advanced</b> (2×: AGVs, forklifts, mobile manipulators, drones). Four capability types,
-  receiving and quality-check zones, inbound jobs linked by location, deadlines and breakdowns.
+  <b>advanced</b> (2×: AGVs, forklifts, mobile manipulators, inventory drones; same 4 × 7 rack layout,
+  receiving shelves top left, quality check bottom left). Four capability types, receiving and quality-check zones, inbound jobs linked by location, deadlines and breakdowns.
 </p>
 
 <p align="center">
   <img src="docs/img/tutorial.gif" width="820" alt="tutorial scenario, large"><br>
-  <b>tutorial</b> (2×): the scenario <a href="#build-your-own-scenario">built step by step below</a>.
-  Totes are picked, packed in a custom zone and delivered; pallets need two AGVs; pickers can use
+  <b>tutorial</b> (3×, same 4 × 7 rack layout, packing station in the goal row): the scenario <a href="#build-your-own-scenario">built step by step below</a>.
+  Totes are picked, packed in a custom zone and delivered; pallets need two AGVs; picking robots can use
   only the standard chargers.
 </p>
 
@@ -90,7 +100,7 @@ The renderer follows the TA-RWARE style:
 
 | Element | Encoding |
 |---|---|
-| **Shape** | robot type, in the order of `robot_types`: hexagon, diamond, triangle, octagon, pentagon, ... (basic: hexagon = AGV, diamond = picker) |
+| **Shape** | robot type, in the order of `robot_types`: hexagon, diamond, triangle, octagon, pentagon, ... (basic: hexagon = AGV, diamond = picking robot) |
 | **Colour** | activity: 🟠 idle · 🔵 travelling to its task · 🟣 in place, waiting for its crew · 🔴 working a stage · 🟤 carrying (maroon) · 🟢 heading to a charger (light) / charging · ⚪ broken down (grey) · ⚫ stranded |
 | **Shelves** | dark blue = stored; teal = requested (a payload waits there, or rides under its carriers); purple frame = where a carried payload is going |
 | **Cells** | dark grey = goal (delivery point); light blue = charger dock; pale colours = custom zones; black = wall |
@@ -314,7 +324,7 @@ robot_types:
     zones: [aisle, storage, goal, dock, packing]
     zones_loaded: [aisle, goal, dock, packing]   # not under racks while loaded
     energy: {capacity_wh: 300, idle_w: 20, move_w: 140, payload_w_per_kg: 1.5, handling_w: 40}
-  - name: picker
+  - name: picking_robot                          # mobile base + arm: picks items into the AGV's tote
     capabilities: [pick, pack]
     speed: 0.5                                   # one cell every two ticks
     handling_speed: 1.5                          # works stages 1.5x faster
@@ -332,7 +342,7 @@ override fields of its type, for example to model an aged battery.
 fleet:
   - {type: agv, count: 5, initial_soc: [0.5, 1.0]}
   - {type: agv, name: agv_old, count: 1, overrides: {energy: {capacity_wh: 180}}}
-  - {type: picker, count: 3}
+  - {type: picking_robot, count: 3}
 ```
 
 **4. Chargers.** Charger types differ in power, and each type takes a share of the docks.
@@ -458,8 +468,8 @@ Each tier adds new cooperation constraints, not just more robots.
 
 | Scenario | Gym id | Robots | Tasks | Main challenges |
 |---|---|---|---|---|
-| `basic` | `battery_tarware/Basic-v2` | 6 AGVs, 3 pickers | SOLO (1 AGV), STANDARD (AGV + picker) and LARGE (AGV + 2 pickers), each picked, delivered and returned | role coupling: pickers are needed at pickup and at return |
-| `intermediate` | `battery_tarware/Intermediate-v2` | light/fast and heavy/slow AGVs (one group with an aged battery), fast and standard pickers | totes, cases, pallets (heavy AGVs only), oversize loads carried jointly by two AGVs | heterogeneity within roles, joint transport, peak and trough demand, fast chargers that heavy AGVs cannot use, pickers that sense only 6 cells |
+| `basic` | `battery_tarware/Basic-v2` | 6 AGVs, 3 picking robots | SOLO (1 AGV), STANDARD (AGV + picking robot) and LARGE (AGV + 2 picking robots), each picked, delivered and returned | role coupling: picking robots are needed at pickup and at return |
+| `intermediate` | `battery_tarware/Intermediate-v2` | light/fast tote AGVs and heavy/slow pallet AGVs (one group with an aged battery), fast and standard picking robots | totes, cases, pallets (heavy AGVs only), oversize loads carried jointly by two AGVs | heterogeneity within roles, joint transport, peak and trough demand, fast chargers that heavy AGVs cannot use, picking robots that sense only 6 cells |
 | `advanced` | `battery_tarware/Advanced-v2` | AGVs, forklifts, mobile manipulators, inspection drones | orders through a quality-check zone, bulky joint orders, inbound jobs (receive → inspect, linked by location), relocations | 4 capability types, custom zones, dependency DAGs, deadlines, breakdowns, noisy drones with small batteries |
 
 `battery_tarware/Warehouse-v2` runs any scenario. `bt.get_scenario(name)` returns a built-in as an
@@ -467,15 +477,16 @@ editable dict.
 
 **Scaling up.** Any scenario can be made larger by editing its dict: the map generator (or the
 ASCII map), the fleet counts, the demand and `observation.task_slots`. `scale()` in
-[docs/make_gifs.py](docs/make_gifs.py) builds the large versions in the animations: basic 3× and
-intermediate 2×, both on a 4 × 7 grid of 2 × 8-shelf rack blocks; advanced 2×, with the map tiled twice side by side and 1.5× demand; tutorial 2×.
+[docs/make_gifs.py](docs/make_gifs.py) builds the large versions in the animations. All four
+use a 4 × 7 grid of rack blocks with 2 × 8 shelves each: basic 3×; intermediate 2×; advanced 2×,
+with receiving and quality-check shelves in the corner blocks; tutorial 3×, at 2× demand.
 All four run without stranding a robot. For example, basic at 3× on a 4 × 7 grid of rack blocks, each 2 shelves wide and 8 deep (44 × 30 cells):
 
 ```python
 cfg = bt.get_scenario("basic")
 cfg["map"] = {"generator": {"rack_rows": 4, "rack_cols": 7, "rack_height": 8, "goals": 7, "docks": 8}}
 for group in cfg["fleet"]:
-    group["count"] *= 3                      # 18 AGVs, 9 pickers
+    group["count"] *= 3                      # 18 AGVs, 9 picking robots
     group["initial_soc"] = [0.25, 0.6]
 cfg["demand"][0]["open"] *= 3                # 24 tasks kept open
 cfg["observation"] = {"task_slots": 32}

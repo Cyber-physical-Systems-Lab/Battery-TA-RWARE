@@ -1,7 +1,7 @@
 # The scenario built step by step in the README ("Build your own scenario").
 #   env = battery_tarware.make("examples/tutorial.yaml")        # needs pyyaml
 name: tutorial
-description: AGVs and pickers; totes are picked, packed and delivered, pallets need two AGVs.
+description: AGVs and picking robots; totes are picked, packed and delivered, pallets need two AGVs.
 
 # 1. Map: . aisle  S storage  G goal  C charger dock  # wall  + custom zones
 map:
@@ -28,7 +28,7 @@ robot_types:
     zones: [aisle, storage, goal, dock, packing]
     zones_loaded: [aisle, goal, dock, packing]      # cannot drive under racks while loaded
     energy: {capacity_wh: 300, idle_w: 20, move_w: 140, payload_w_per_kg: 1.5, handling_w: 40}
-  - name: picker
+  - name: picking_robot                            # mobile base + arm: picks items into the AGV's tote
     capabilities: [pick, pack]
     speed: 0.5                                      # one cell every two ticks
     handling_speed: 1.5                             # works stages 1.5x faster
@@ -42,7 +42,7 @@ robot_types:
 fleet:
   - {type: agv, count: 5, initial_soc: [0.5, 1.0]}
   - {type: agv, name: agv_old, count: 1, overrides: {energy: {capacity_wh: 180}}}
-  - {type: picker, count: 3}
+  - {type: picking_robot, count: 3}
 
 # 4. Chargers: types, power and share of the docks
 charger_types:
@@ -57,7 +57,7 @@ task_types:
     deadline: 300
     roles:
       - {name: carrier, capability: transport, presence: on_cell}
-      - {name: picker, capability: pick, presence: adjacent, radius: 1}
+      - {name: picker, capability: pick, presence: adjacent, radius: 1}    # role, filled by a picking robot
     stages:
       - {name: pick, at: origin, roles: [carrier, picker], duration: 3}
       - {name: pack, at: "zone:packing", roles: [carrier, picker], duration: 2}

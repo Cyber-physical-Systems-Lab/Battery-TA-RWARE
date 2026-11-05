@@ -101,7 +101,7 @@ def render(cfg, tick, seed=0):
     f_title, f_lab, f_note = font(20), font(14), font(13)
     d.text((img.width / 2, 18), "Battery-TA-RWARE: one tick of the basic scenario (map rotated 90°)", fill="black",
            font=f_title, anchor="mm")
-    d.text((img.width / 2, 42), "shape = robot type (hexagon AGV, diamond picker)   colour = activity   "
+    d.text((img.width / 2, 42), "shape = robot type (hexagon AGV, diamond picking robot)   colour = activity   "
            "badge = battery   tick = heading   blue line = crew member heading to its task", fill=(70, 70, 70), font=f_note,
            anchor="mm")
 
