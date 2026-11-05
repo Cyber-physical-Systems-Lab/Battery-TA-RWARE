@@ -80,6 +80,18 @@ def frame(env, title):
     return img
 
 
+def large_config():
+    """The basic scenario scaled up 3x: an 18-block warehouse, 18 AGVs and 9 pickers."""
+    cfg = bt.get_scenario("basic")
+    cfg["name"] = "basic_large"
+    cfg["map"] = {"generator": {"rack_rows": 3, "rack_cols": 6, "rack_height": 5, "goals": 6, "docks": 8}}
+    for group in cfg["fleet"]:
+        group["count"] *= 3
+    cfg["demand"][0]["open"] *= 3
+    cfg["observation"] = {"task_slots": 32}
+    return cfg
+
+
 def record(scenario, frames, every, seed=0, warmup=0, name=None, **overrides):
     env = bt.make(scenario, **overrides)
     coordinator = bt.GreedyCoalitionCoordinator("fifo")
@@ -97,6 +109,7 @@ def record(scenario, frames, every, seed=0, warmup=0, name=None, **overrides):
 
 
 if __name__ == "__main__":
+    record(large_config(), frames=160, every=1, warmup=300, name="large")
     record("basic", frames=180, every=1, warmup=100)
     record("intermediate", frames=180, every=2, warmup=1000)   # demand peak
     record("advanced", frames=180, every=2, warmup=850)

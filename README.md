@@ -1,9 +1,59 @@
-# Battery-TA-RWARE
+<h1 align="center">Battery-TA-RWARE: Task-Assignment Multi-Robot Warehouse with Battery Management</h1>
 
-**Heterogeneous multi-robot cooperation under battery constraints**: a configurable warehouse
-simulator for task allocation, coalition formation and charging. It is a
+<p align="center">
+  <img src="docs/img/explanation.png" width="820" alt="Annotated tick of the basic scenario: robots, shelves, goals, docks and what each colour and shape means">
+</p>
+
+**Heterogeneous multi-robot cooperation under battery constraints.** Battery-TA-RWARE is a
+configurable warehouse simulator for task allocation, coalition formation and charging. It is a
 [Gymnasium](https://gymnasium.farama.org) environment with a
 [PettingZoo](https://pettingzoo.farama.org) wrapper.
+
+> **Version 2 is a new engine.** It is not trajectory-compatible with Battery-TA-RWARE v1 (branch
+> [`v1`](../../tree/v1), tag `legacy-v1.1.0`), or with results obtained on the v1 kernel. The rules
+> are fixed in [docs/semantics.md](docs/semantics.md) (model version 2.0). Report the package
+> version with your results.
+
+## Contents
+
+- [Environment description](#environment-description)
+  - [What does it look like?](#what-does-it-look-like)
+  - [Action space](#action-space)
+  - [Observation space](#observation-space)
+  - [Dynamics: movement, cooperation and battery](#dynamics-movement-cooperation-and-battery)
+  - [Rewards and episode end](#rewards-and-episode-end)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Build your own scenario](#build-your-own-scenario)
+- [What is configurable](#what-is-configurable)
+- [Built-in scenarios](#built-in-scenarios)
+- [Interfaces](#interfaces)
+- [Baselines](#baselines)
+- [Citing, licence and acknowledgements](#citing-licence-and-acknowledgements)
+
+# Environment description
+
+A team of heterogeneous robots serves a stream of warehouse tasks on a grid. In the basic
+scenario, AGVs carry shelves and pickers load them, much as in TA-RWARE. Neither group can finish
+an order alone, so the robots have to meet, at the right shelf and at the right time. Every robot
+runs on a battery that it has to recharge at a limited number of docks.
+
+In version 2 all of this is configuration:
+
+- **Robots** differ in what they can do, how fast they move, what they can lift, how long their
+  battery lasts, which chargers they can use and how much they can see.
+- **Tasks** say which capabilities they need, how many robots of each, where the crew must meet
+  and for how long.
+- **The environment** works out which teams *can* do a task. Your coordinator or learning agent
+  decides who actually does it.
+
+## What does it look like?
+
+<p align="center">
+  <img src="docs/img/large.gif" width="760" alt="large warehouse: 18 AGVs and 9 pickers">
+  <br><b>large</b>: the basic scenario scaled up 3×, with 18 AGVs, 9 pickers and 18 rack blocks
+  (see <a href="#built-in-scenarios">scaling up</a>)
+</p>
 
 <table>
   <tr>
@@ -16,41 +66,144 @@ simulator for task allocation, coalition formation and charging. It is a
   </tr>
 </table>
 
-<sub>Rendered in the TA-RWARE style:
-**shape** = robot type (hexagon, diamond, triangle, octagon, ...);
-**colour** = activity: orange idle, blue travelling, violet waiting for the crew, red working a
-stage, maroon carrying, green charging, grey broken down, black stranded.
-Shelves are dark blue, a requested shelf (payload waiting) is teal, and a purple frame marks where
-a carried payload is going. The badge is the battery (green > 80 %, yellow > 20 %, red), and the
-tick shows the last move direction.
-All runs use the greedy baseline, seed 0. Regenerate them with `python docs/make_gifs.py`; the
-same image comes from `env.render()` with `render_mode="rgb_array"`.</sub>
+The renderer follows the TA-RWARE style:
 
-The simulator rests on three ideas:
+| Element | Encoding |
+|---|---|
+| **Shape** | robot type, in the order of `robot_types`: hexagon, diamond, triangle, octagon, pentagon, ... (basic: hexagon = AGV, diamond = picker) |
+| **Colour** | activity: 🟠 idle · 🔵 travelling to its task · 🟣 in place, waiting for its crew · 🔴 working a stage · 🟤 carrying (maroon) · 🟢 heading to a charger (light) / charging · ⚪ broken down (grey) · ⚫ stranded |
+| **Shelves** | dark blue = stored; teal = requested (a payload waits there, or rides under its carriers); purple frame = where a carried payload is going |
+| **Cells** | dark grey = goal (delivery point); light blue = charger dock; pale colours = custom zones; black = wall |
+| **Badges** | the battery fill level (green > 80 %, yellow > 20 %, red below); a tick for the last move direction; a thin blue line from a crew member to the task it is heading for |
 
-- Robots differ in what they can do, how fast they move, what they can lift, how long their
-  battery lasts, which chargers they can use and how much they can see.
-- Tasks say which capabilities they need, how many robots of each, where the crew must meet and
-  for how long.
-- The environment works out which teams *can* do a task. Your coordinator or learning agent
-  decides who actually does it.
+`env.render()` produces the same image (`render_mode="rgb_array"` or `"human"`; numpy only). The
+GIFs and the figure above come from `python docs/make_gifs.py` and `python docs/make_figure.py`
+(greedy baseline, seed 0; they need Pillow).
 
-> **Version 2 is a new engine.** It is not trajectory-compatible with Battery-TA-RWARE v1 (branch
-> [`v1`](../../tree/v1), tag `legacy-v1.1.0`), or with results obtained on the v1 kernel. The rules
-> are fixed in [docs/semantics.md](docs/semantics.md) (model version 2.0). Report the package
-> version with your results.
+## Action space
 
-## Contents
+`action_space = MultiDiscrete([n_actions] * n_robots)`: every robot picks one action per tick.
+The scenario's `action_mode` chooses between two action sets. In both, illegal actions are
+rejected, counted in `info["invalid_actions"]` and have no effect. The mask of legal actions is
+`info["action_mask"]` (n_robots × n_actions), and each robot's row is also in its observation.
 
-- [Install](#install)
-- [Quick start](#quick-start)
-- [Build your own scenario](#build-your-own-scenario)
-- [What is configurable](#what-is-configurable)
-- [Built-in scenarios](#built-in-scenarios)
-- [Interfaces](#interfaces)
-- [How a tick works](#how-a-tick-works)
-- [Baselines](#baselines)
-- [Citing, licence and acknowledgements](#citing-licence-and-acknowledgements)
+**Macro mode** (`action_mode: macro`, the default). Robots choose *what to do*, and movement is
+automatic: shortest paths with PIBT, as described below.
+
+| Action | Meaning | Allowed when |
+|---|---|---|
+| `0` | no-op: keep doing what it is doing | always |
+| `1 … K` | join the task in board slot *k* and take one of its open roles | the robot has a capability for an open role, is operational, and (with `task_visibility: sensing`) can see the task |
+| `K+1 … K+C` | go to charger *c* and charge there | the charger type is compatible, and the robot is not carrying |
+| `K+C+1` | release: give up its role or charger | it has a commitment and is not carrying (a broken-down robot with a task can always be released; it drops its payload) |
+
+*K* is `observation.task_slots`, the number of tasks on the board. The board lists open tasks that
+still have a role to fill, in release order. *C* is the number of chargers. For the built-in
+scenarios n_actions is 22 (basic), 24 (intermediate) and 28 (advanced). Joining a task that is
+already running is allowed: crews are recruited stage by stage.
+
+**Primitive mode** (`action_mode: primitive`). Robots drive themselves.
+
+| Action | Meaning |
+|---|---|
+| `0` wait | stay |
+| `1` up · `2` down · `3` left · `4` right | move one cell (allowed only into cells of the robot's zones, respecting one-way cells; joint carriers follow their lead) |
+| `5` interact | dock at the charger the robot stands on, or join the task whose stage cell it is positioned for |
+| `6` release | as in macro mode |
+
+Centralized coordinators can skip the action vector and assign whole coalitions through the
+validated simulator API (see [Interfaces](#interfaces)).
+
+## Observation space
+
+Each robot gets its own observation:
+`observation_space = Dict({robot_name: Dict(self, robots, tasks, chargers, action_mask)})`.
+All arrays are float32 and bounded. Positions are divided by the map size, energy is a state of
+charge, masses are divided by the largest payload and times by `max_steps`.
+
+| Key | Shape | Content |
+|---|---|---|
+| `self` | `(2 + 6 + 5 + 2 + n_types + n_caps,)` | own position (y, x); state of charge, speed, payload capacity, handling speed, battery capacity, charging flag; status one-hot (idle, task, charge, failed, stranded); carrying, has a task; robot-type one-hot; capability flags |
+| `robots` | `(n_robots, 5 + 5 + n_types)` | per robot: visible flag, position, state of charge, carrying, status one-hot, type one-hot. **The row is all zeros if this robot cannot see that one.** |
+| `tasks` | `(K, 14 + n_task_types + 2·n_caps)` | per board slot: present, visible, weight, origin, destination and current stage cell; stage progress, age, time to deadline, priority, "my task"; task-type one-hot; open roles per capability; required robots per capability. A task outside the sensing range shows only `present`. |
+| `chargers` | `(C, 6)` | position, power, occupied, compatible with this robot, my charger |
+| `action_mask` | `(n_actions,)` | this robot's legal actions (MultiBinary) |
+
+Example sizes for basic: `self` (19,), `robots` (9, 12), `tasks` (16, 21), `chargers` (4, 6). The
+information each robot gets is heterogeneous:
+
+- **Sensing.** A robot sees other robots within its `sensing_range` (Chebyshev distance). With
+  `observation.task_visibility: sensing`, the same range limits which tasks it sees.
+- **Communication.** A robot also sees whatever a robot within `comm_range` sees: one relay hop,
+  and both ranges must cover the distance.
+- **Localization noise.** Every position a robot observes, its own included, carries Gaussian noise
+  with standard deviation `localization_noise` (in cells).
+
+The PettingZoo wrapper adds `state()`, a global vector for centralized critics. `env.state_view()`
+gives the full, noise-free state as frozen objects or numpy arrays.
+
+## Dynamics: movement, cooperation and battery
+
+One tick runs these phases in a fixed order: actions → breakdowns → movement → stage work →
+energy and charging → new demand. The full rules are in [docs/semantics.md](docs/semantics.md).
+
+**Movement and collisions.**
+- *Macro mode.* Robots move with [PIBT](https://doi.org/10.1016/j.artint.2022.103752) (Priority
+  Inheritance with Backtracking): at most one cell per tick, never into an occupied cell and never
+  swapping with another robot. Higher-priority robots push lower-priority ones aside. Distances
+  respect each robot's allowed zones (`zones`, or `zones_loaded` while carrying) and one-way cells.
+- *Primitive mode.* Moves are resolved simultaneously. A stationary robot blocks its cell, the
+  lowest id wins a contested cell, and swaps are rejected. Only the carriers of one payload may
+  share a cell.
+- Speed below 1 accumulates credit: a speed of 0.5 means one move every two ticks.
+- Joint carriers move as one unit, at the speed of the slowest member.
+
+**Cooperation.**
+- A task's stages run in order. A stage advances only while every role it needs is filled and
+  present (`on_cell`, or `adjacent` within `radius`) and every member is operational. This is
+  the rendezvous.
+- Work per tick is the slowest member's `handling_speed`.
+- The payload is picked up after the first stage and placed after the last one.
+- Helpers that the next stage does not need are released, unless their role has `stay: true`.
+- If the whole crew leaves after work has started, the task is *suspended* and keeps its progress.
+
+**Battery and charging.**
+
+Power is drawn every tick and integrated over `seconds_per_tick`:
+
+```
+P = idle_w + move_w·[moved] + payload_w_per_kg·(weight / n_carriers)·[moved while carrying] + handling_w·[worked]
+```
+
+- A robot charges only on a compatible, free dock, at `min(charger power_w, max_charge_w) × charge_efficiency`.
+- It stops automatically when the battery is full.
+- A robot whose battery reaches 0 % is **stranded** for good: it releases its role and drops its
+  payload where it stands, for another crew to recover.
+- Robots can also break down at random (`failure.rate`) and sit still for `repair_ticks`.
+
+## Rewards and episode end
+
+The team reward is the sum of the per-robot rewards. The per-robot rewards themselves are in
+`info["robot_rewards"]`, and the PettingZoo wrapper exposes them with `reward_mode="individual"`.
+
+| Term (`rewards.*`) | Default | When, and who gets it |
+|---|---|---|
+| `task_completed` | 1.0 | × task `priority`, when a task completes, split equally across the crew |
+| `late_per_tick` | 0.0 | × ticks past the deadline, added at completion (use a negative value) |
+| `stage_completed` | 0.0 | when a stage completes, split across that stage's crew |
+| `energy_per_kwh` | 0.0 | × energy each robot used this tick (use a negative value) |
+| `stranded` | −1.0 | once, when a robot's battery runs out |
+| `per_tick` | 0.0 | every robot, every tick |
+
+- `terminated`: the demand is finite and everything is done, or every robot is stranded.
+- `truncated`: `max_steps` has been reached.
+- `info` also holds:
+  - `events`: typed transitions, such as `task_completed`, `stage_started`, `payload_dropped`,
+    `charge_started`, `robot_stranded`, ...;
+  - `metrics`: tasks completed and open, latency, lateness, energy, distance, stranded robots.
+
+Every random process (spawn positions, demand, task sampling, failures and observation noise) has
+its own seeded stream, so `reset(seed)` reproduces a run exactly.
 
 ## Install
 
@@ -291,27 +444,25 @@ Each tier adds new cooperation constraints, not just more robots.
 `battery_tarware/Warehouse-v2` runs any scenario. `bt.get_scenario(name)` returns a built-in as an
 editable dict.
 
+**Scaling up.** The *large* animation above is basic scaled up 3×: a 25 × 26 grid (rows × columns), 18 AGVs and
+9 pickers. The greedy baseline completes about 275 tasks in 2000 ticks there, with no robot
+stranded.
+
+```python
+cfg = bt.get_scenario("basic")
+cfg["map"] = {"generator": {"rack_rows": 3, "rack_cols": 6, "rack_height": 5, "goals": 6, "docks": 8}}
+for group in cfg["fleet"]:
+    group["count"] *= 3                      # 18 AGVs, 9 pickers
+cfg["demand"][0]["open"] *= 3                # 24 tasks kept open
+cfg["observation"] = {"task_slots": 32}
+env = bt.make(cfg)
+```
+
 ## Interfaces
 
-**Gymnasium** (`BatteryTarwareEnv`)
-
-- `observation_space` is `Dict({robot_name: Dict(self, robots, tasks, chargers, action_mask)})`;
-  all entries are float32 and bounded. `robots` holds only the robots that this robot can see, at
-  positions that include its localization noise.
-- `action_space` is `MultiDiscrete([n_actions] * n_robots)`. `action_mode` selects the action set:
-  - `macro` (the default): `0` no-op; `1..K` join the task in board slot k; `K+1..K+C` charge at
-    charger c; the last action releases the robot. Movement is automatic.
-  - `primitive`: `wait`, `up`, `down`, `left`, `right`, `interact`, `release`. `interact` docks at
-    a charger, or joins the task the robot is positioned for.
-- The reward is the team reward. Per-robot credit is in `info["robot_rewards"]`.
-- `info` holds:
-  - `action_mask`: n_robots × n_actions;
-  - `events`: the typed transition log for this tick;
-  - `metrics`;
-  - `invalid_actions`.
-- `terminated`: the finite demand is done, or every robot is stranded. `truncated`: `max_steps` has
-  been reached.
-- Render modes: `rgb_array`, `ansi`, `human` (matplotlib).
+**Gymnasium** (`BatteryTarwareEnv`): see [Action space](#action-space) and
+[Observation space](#observation-space). The render modes are `rgb_array`, `ansi` and `human`
+(matplotlib).
 
 **PettingZoo**: `battery_tarware.pettingzoo_env.BatteryTarwareParallelEnv(scenario, reward_mode="individual" | "team")`
 passes `pettingzoo.test.parallel_api_test`. It also provides `state()` for centralized critics.
@@ -328,29 +479,6 @@ passes `pettingzoo.test.parallel_api_test`. It also provides `state()` for centr
 and chargers. `.to_arrays()` returns contiguous, fixed-dtype numpy arrays (schema version 1, int32
 `(row, col)` coordinates). C++ or other native coordinators can read them directly, for example
 through pybind11 `py::array_t`.
-
-## How a tick works
-
-Each tick runs these phases in order (details in [docs/semantics.md](docs/semantics.md)):
-
-1. **Actions**: join a task role, go and charge, or release; in primitive mode, move or interact.
-2. **Breakdowns**: random failures and repairs. A failed robot stops but keeps its commitment.
-3. **Movement**:
-   - *Macro mode*: robots move with [PIBT](https://doi.org/10.1016/j.artint.2022.103752). Robots
-     in the way are pushed aside, joint carriers move as one unit, and distances respect zones and
-     one-way cells.
-   - *Primitive mode*: simultaneous moves with deterministic conflict resolution.
-4. **Stage work**: a stage advances only while its whole crew is present and operational, at the
-   slowest member's handling speed. Crews are recruited stage by stage.
-5. **Energy**: idle, driving, payload (each carrier pays for its share), handling and charging
-   power, in watts, integrated over `seconds_per_tick`.
-   - A battery at 0 % strands the robot permanently.
-   - A stranded carrier drops its payload for another crew to recover.
-6. **Demand**: new tasks and jobs are released. Dependent tasks become ready once their
-   prerequisites complete.
-
-Every random process (spawn positions, demand, task sampling, failures and observation noise) has
-its own seeded stream, so `reset(seed)` reproduces a run exactly.
 
 ## Baselines
 
