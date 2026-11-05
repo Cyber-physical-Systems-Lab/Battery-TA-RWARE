@@ -1,37 +1,41 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name="tarware"
-version="1.1.0"
-description="Task-Assignment Multi-Robot Warehouse environment for reinforcement learning"
-readme = {file = "README.txt", content-type = "text/markdown"}
-authors = [
-  {name = "Raul Steleac", email = "raulsteleac@ed.ac.uk"},
-]
+name = "battery-ta-rware"
+version = "2.0.0"
+description = "Battery-TA-RWARE: heterogeneous multi-robot cooperation under battery constraints (Gymnasium + PettingZoo)"
+readme = {file = "README.md", content-type = "text/markdown"}
+authors = [{name = "Xuezhi Niu"}]
+maintainers = [{name = "Xuezhi Niu"}]
 license = {file = "LICENSE"}
-classifiers=[
-        "Development Status :: 4 - Beta",
-        "Intended Audience :: Developers",
-        "Programming Language :: Python :: 3.9",
-    ]
+requires-python = ">=3.10"
+keywords = ["multi-robot", "task allocation", "coalition formation", "warehouse", "battery", "gymnasium",
+            "pettingzoo", "reinforcement learning", "multi-agent path finding"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
-    "numpy",
-    "gymnasium",
-    "six==1.16.0",
-    "pyglet==1.5.11",
-    "networkx==3.2.1",
-    "imageio",  # tarware.heuristic (GIF export)
-    "scipy",    # tarware.planners (MILP-based BMRTA / Calvo)
+    "numpy>=1.23",
+    "gymnasium>=1.0",
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+pettingzoo = ["pettingzoo>=1.24"]
+yaml = ["pyyaml>=6.0"]
+render = ["matplotlib>=3.6"]
+all = ["pettingzoo>=1.24", "pyyaml>=6.0", "matplotlib>=3.6"]
+gifs = ["pillow>=9.0"]           # docs/make_gifs.py
 
 [project.urls]
-Repository  = "https://github.com/raulsteleac/task-assignment-robotic-warehouse.git"
+Repository = "https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE"
+Documentation = "https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE/tree/main/docs"
+Changelog = "https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["tarware*"]
+include = ["battery_tarware*"]

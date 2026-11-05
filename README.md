@@ -1,237 +1,396 @@
-<p align="center">Battery-TA-RWARE: Task-Assignment Multi-Robot Warehouse with Battery Management</p>
- <p align="center">
- <img width="550px" src="docs/img/tarware_explanation.png" align="center" alt="Task-Assignment Multi-Robot Warehouse (RWARE)" />
-</p>
+# Battery-TA-RWARE
 
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://GitHub.com/Naereen/StrapDown.js/graphs/commit-activity)
-[![GitHub license](https://img.shields.io/github/license/Naereen/StrapDown.js.svg)](https://github.com/Naereen/StrapDown.js/blob/master/LICENSE)
+**Heterogeneous multi-robot cooperation under battery constraints**: a configurable warehouse
+simulator for task allocation, coalition formation and charging. It is a
+[Gymnasium](https://gymnasium.farama.org) environment with a
+[PettingZoo](https://pettingzoo.farama.org) wrapper.
 
-<h1>Table of Contents</h1>
+<table>
+  <tr>
+    <td align="center"><img src="docs/img/basic.gif" width="400" alt="basic scenario"><br><b>basic</b>: AGVs and pickers, pick + return</td>
+    <td align="center"><img src="docs/img/intermediate.gif" width="400" alt="intermediate scenario"><br><b>intermediate</b>: light/heavy AGVs, joint transport</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/img/advanced.gif" width="400" alt="advanced scenario"><br><b>advanced</b>: AGVs, forklifts, arms, drones, custom zones</td>
+    <td align="center"><img src="docs/img/tutorial.gif" width="400" alt="tutorial scenario"><br><b>tutorial</b>: the scenario built below, in YAML</td>
+  </tr>
+</table>
 
-- [Environment Description](#environment-description)
-  - [What does it look like?](#what-does-it-look-like)
-  - [Action Space](#action-space)
-  - [Observation Space](#observation-space)
-  - [Dynamics: Collisions and Battery](#dynamics-collisions-and-battery)
-  - [Rewards](#rewards)
-- [Environment Parameters](#environment-parameters)
-  - [Naming Scheme](#naming-scheme)
-  - [Custom layout](#custom-layout)
-- [PRISM simulation env (`prism` branch)](#prism-simulation-env-prism-branch)
-- [Installation](#installation)
-- [Getting Started](#getting-started)
-- [Heuristic](#heuristic)
-- [Please Cite](#please-cite)
+<sub>Circles are robots: the colour is the robot type, the letter its initial, the bar its
+battery and a yellow cap means it is carrying. Red diamonds are open tasks; red lines link each
+crew member to its task. All four runs use the greedy baseline, seed 0. Regenerate them with
+`python docs/make_gifs.py`.</sub>
 
+The simulator rests on three ideas:
 
-# Environment Description
+- Robots differ in what they can do, how fast they move, what they can lift, how long their
+  battery lasts, which chargers they can use and how much they can see.
+- Tasks say which capabilities they need, how many robots of each, where the crew must meet and
+  for how long.
+- The environment works out which teams *can* do a task. Your coordinator or learning agent
+  decides who actually does it.
 
-The Battery-TA-RWARE (Battery-Enhanced Task-Assignment Multi-Robot Warehouse) is an adaptation of the  [original multi-robot warehouse (RWARE)](https://github.com/uoe-agents/robotic-warehouse) environment to enable a more realistic scenario, inspired by the [Quicktron Quickbin](https://www.quicktron.com.cn/web/solution/quickpick.html?sitecode=en) warehouse, where two groups of heterogenous agents are required to cooperate to maximize the crew's overall pick-rate, measured in order-lines delivered per hour. The actions of each agent represent locations in the warehouse to facilitate this cooperation and direct optimization of the throughput of deliveries. We denote one group of these agents as AGVs (carrier agents) and Pickers (loading agents). Agents now include battery management, requiring them to balance task execution with recharging to avoid penalties or immobilization.
+> **Version 2 is a new engine.** It is not trajectory-compatible with Battery-TA-RWARE v1 (branch
+> [`v1`](../../tree/v1), tag `legacy-v1.1.0`), or with results obtained on the v1 kernel. The rules
+> are fixed in [docs/semantics.md](docs/semantics.md) (model version 2.0). Report the package
+> version with your results.
 
-The environment is configurable: it allows for different sizes, rack layouts, number of requested items, number of agents, and battery-related parameters. 
+## Contents
 
-## What does it look like?
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Build your own scenario](#build-your-own-scenario)
+- [What is configurable](#what-is-configurable)
+- [Built-in scenarios](#built-in-scenarios)
+- [Interfaces](#interfaces)
+- [How a tick works](#how-a-tick-works)
+- [Baselines](#baselines)
+- [Citing, licence and acknowledgements](#citing-licence-and-acknowledgements)
 
-Below is an illustration of a medium (240 item location) warehouse with 19 trained agents (12 AGVs (hexagons) and 7 Pickers (diamonds)). The agents are following a pre-defined heuristic, defined in `tarware/heuristic.py`. This visualisation can be achieved using the `env.render()` function as described later.
+## Install
 
-<p align="center">
- <img width="450px" src="episode_0.gif" align="center" alt="Task-Assignment Multi-Robot Warehouse (RWARE) illustration" />
-</p>
+Python ≥ 3.10.
 
-
-## Action Space
-In this simulation, robots have the following discrete action space:
-
-- Action space AGVs = {Shelf Locations, Goal Locations, Charging Stations}
-- Action Space Pickers = {Shelf Locations, Goal Locations*, Charging Stations}
-
-(* the goal locations are invalidated from the action space of the Picker agents to reflect their role in the warehouse)
-
-Agents can now select charging stations to recharge their batteries. One of the main challenges of this environment is the sheer size of the action space that scales with the layout of the warehouse. While this design introduces certain disadvantages, it facilitates easier cooperation between AGVs and Pickers that need to synchronize to meet at a certain shelf location at a certain time to execute a pick. The path traversal is solved through an A* algorithm, while collisions are avoided through an updated logic of the RWARE collision avoidance implementation. 
-
-## Observation Space
-The observations for the agents can either can either provide a partial view of the environment (facilitating Partial Observability studies) or global:
-
-Global observation spaces are identical for all agents, and consist of as:
-- The current target and location of each agent
-- The carrying status for AGVs, together with the requested status of the carried shelf.
-- The loading status for AGVs
-- The status of each shelf location, occupied and requested.
-- Battery levels for all agents (e.g., current charge percentage).
-
-Partial observation space remove parts of this information from each agent type, where AGVs do not have access to the carrying/loading statuses of other AGVs and Pickers do not observe any information about the shelf states.
-
-We note the distinction to the original RWARE environment, where the observation space is a fixed size window around each agent. The nature of the TA problem and of the action space require the agents to have a wide scope of information on the status of the shelf locations and requested items to maximize the pick-rates. 
-
-## Dynamics: Collisions and Battery
-
-Collision dynamics are modeled by adapting the original RWARE implementation to the A* path-finding based traversal. Whenever a clash happens (agent i steps on a current/future position of agent j), the agent goes into a "fixing_clash" state where it recomputes its trajectory towards the target location while taking the current position of the other agents into account. We note that this logic might lead to deadlock states, agents becoming stuck, which we model by allowing the workers a fixed window of time-steps in which they can attempt to recalculate their path. If no viable path was found during this period, the agents become available again and can choose another target location.
-
-Battery Dynamics: Agents have a battery level (0-100%) that depletes based on actions:
-- Movement: Consumes 1 unit per step.
-- Loading/Unloading: Consumes 2 units.
-- Standby: Consumes 0.1 units per step.
-Agents must visit charging stations to recharge (5 units per step while charging). Low battery (<20%) triggers penalties and can immobilize agents if fully depleted. Charging stations are placed at fixed locations (e.g., highways).
-
-## Rewards
-At each time a set number of shelves R is requested. When a requested shelf is brought to a goal location, another shelf is uniformly sampled and added to the current requests. AGVs are rewarded for successfully delivering a requested shelf to a goal location, with a reward of 1. Pickers receive a reward of 0.1 whenerver they help an AGV to load/unload a shelf. A significant challenge in these environments is for AGVs to deliver requested shelves but also finding an empty location to return the previously delivered shelf. Having multiple steps between deliveries leads to a sparse reward signal.
-
-Battery Rewards: Agents receive a penalty of -0.01 per step if battery is low (<20%). Successful charging provides a small positive reward to encourage maintenance.
-
-# Environment Parameters
-
-The multi-robot warehouse task is parameterised by:
-
-- The size of the warehouse which can be modified based on the number of rows, columns of shelf racks and the number of shelves per rack. Here rack refers to a group of shelf's initial locations.
-- The number of agents, and the ratio between AGVs and Pickers.
-- The number of requested shelves R.
-- The observability type: "partial"|"global".
-- Battery Parameters: Initial battery levels, consumption rates, charge rates, low battery thresholds, and charging station placements.
-
-## Naming Scheme
-
-The environment naming follows the pattern: `tarware-{size}-{num_agvs}agvs-{num_pickers}pickers-{obs_type}obs-chg-v1`
-
-- `size`: tiny, small, medium, large, extralarge
-- `num_agvs`: Number of AGVs (1-20)
-- `num_pickers`: Number of Pickers (1-10)
-- `obs_type`: partialobs, globalobs
-- `chg`: Indicates battery/charging features
-
-## Custom layout
-
-You can customize the warehouse layout by modifying parameters in `tarware/__init__.py`, such as grid size, shelf rows/columns, and charging station positions.
-
-# PRISM simulation env (`prism` branch)
-
-This branch holds the exact `tarware/` simulation environment used for the
-PRISM experiments (Policy-shaping via Reward decomposition for Inter-agent
-Symbiosis). It is a verbatim copy of `tarware/` from the PRISM development
-repository `n7729697/robotic-symbiosis-tarware` at commit `62a30ff`. Training
-and analysis code stays in that repository. This branch only pins the
-environment, so results can be reproduced against a fixed simulator.
-
-Main additions over `main`:
-
-- **Heterogeneous package mix.** `PackageType` adds SOLO, PICKER_SOLO,
-  STANDARD, HEAVY and LARGE, each needing a different AGV/Picker coalition. The
-  PRISM experiments use the env id
-  `tarware-small-4agvs-2pickers-partialobs-chg-pkgmix-v1`.
-- **Battery / energy coupling.** A loaded AGV's movement cost now scales with
-  shelf weight (`Warehouse._movement_energy_cost`). `tarware/energy_coupling.py`
-  coordinates independent or synchronised Picker–AGV charging for the
-  heuristic. This branch also adds the `num_chargers` and
-  `battery_drain_multiplier` kwargs and the `*-chg-pkgmix-competition-v1`
-  variants. The defaults keep one charger per agent and 1x drain.
-- **Rule controller and planner baselines.** `tarware/heuristic.py` now uses
-  the charging, replanning (`replanning.py`) and role-tracking
-  (`role_assignment.py`) modules. It also adds the BMRTA, Calvo and CBBA task
-  allocators in `tarware/planners/`.
-  `heuristic_episode` now returns 7 values: `infos, global_return,
-  episode_returns, coupling, replanning, role, behavior_events`.
-- **Seeded request stream.** `Warehouse.seed(s)` now also seeds Gymnasium's
-  `np_random`, which drives outbound-request replenishment. With
-  `env.seed(s); env.reset(seed=s)`, a seed produces the same rollout in every
-  process.
-
-To check that this branch still matches the PRISM repo, run this from a
-checkout of the PRISM repo:
-
-```sh
-diff -r <path-to-Battery-TA-RWARE>/tarware tarware -x __pycache__
+```bash
+pip install "battery-ta-rware @ git+https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE@v2.0.0"
+# with the optional extras (PettingZoo, YAML scenarios, matplotlib window):
+pip install "battery-ta-rware[all] @ git+https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE@v2.0.0"
 ```
 
-# Installation
+Or install from a clone:
 
-```sh
-git clone git@github.com:uoe-agents/task-assignment-robotic-warehouse.git  # Or your fork/repo
-cd task-assignment-robotic-warehouse
-pip install -e .
+```bash
+git clone https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE.git
+cd Battery-TA-RWARE
+pip install -e ".[all]"
 ```
 
-# Getting Started
+The base install needs only `numpy` and `gymnasium`. The optional extras are `pettingzoo`, `yaml`,
+`render` (matplotlib) and `gifs` (Pillow), or `all`. The distribution is called
+`battery-ta-rware`; the Python package is imported as `battery_tarware`.
 
-Battery-TA-RWARE was designed to be compatible with Open AI's Gym framework.
-
-Creating the environment is done exactly as one would create a gymnasium environment:
+## Quick start
 
 ```python
-import tarware
 import gymnasium as gym
+import numpy as np
+import battery_tarware as bt        # registers battery_tarware/{Basic,Intermediate,Advanced,Warehouse}-v2
 
-env = gym.make("tarware-tiny-3agvs-2pickers-partialobs-chg-v1")
+env = gym.make("battery_tarware/Intermediate-v2")
+obs, info = env.reset(seed=0)
+rng = np.random.default_rng(0)
+for _ in range(100):
+    mask = info["action_mask"]                                   # (n_robots, n_actions), 1 = allowed
+    action = [rng.choice(np.flatnonzero(m)) for m in mask]       # a random valid action per robot
+    obs, reward, terminated, truncated, info = env.step(action)
+print(info["metrics"])
+
+# or let a coordinator drive a whole episode
+metrics = bt.run_episode(bt.make("advanced"), bt.GreedyCoalitionCoordinator("edd"), seed=0)
 ```
 
-The observation space and the action space are accessed using:
+More examples are in [examples/](examples):
+
+- [quickstart.py](examples/quickstart.py): a masked random policy and the greedy baseline.
+- [pettingzoo_and_primitive.py](examples/pettingzoo_and_primitive.py): the PettingZoo API and
+  primitive (move-level) actions.
+- [external_coordinator.py](examples/external_coordinator.py): your own coordinator on read-only
+  state views and numpy arrays.
+- [custom_scenario.py](examples/custom_scenario.py) and
+  [custom_scenario.yaml](examples/custom_scenario.yaml): a hospital-logistics fleet.
+- [tutorial.yaml](examples/tutorial.yaml): the scenario built in the next section.
+
+## Build your own scenario
+
+A scenario is a plain mapping (a Python dict, a JSON file or a YAML file) that is validated on
+load. The full file of this walkthrough is [examples/tutorial.yaml](examples/tutorial.yaml), and
+every field is documented in [docs/configuration.md](docs/configuration.md).
+
+**1. Map.** Draw it in ASCII or use the generator. Custom zones get their own symbol.
+
+```yaml
+map:
+  ascii:
+    - "C..C..C..C...."        # C charger dock
+    - ".............."        # . aisle
+    - ".SS..SS..SS..."        # S storage
+    - ".SS..SS..SS..."
+    - ".............."
+    - "GG...PPP...GG."        # G goal, P custom zone
+  zones: {P: packing}
+# or: map: {generator: {rack_rows: 2, rack_cols: 3, rack_height: 4, goals: 2, docks: 4, aisle_width: 2}}
+```
+
+One-way cells (`^ v < >`) and crossings (`+`) are optional, as are walls (`#`).
+
+**2. Robot types.** A robot type sets what a robot can do (capabilities), how it moves and works,
+its battery, what it can see and how often it breaks down.
+
+```yaml
+robot_types:
+  - name: agv
+    capabilities: [transport]
+    speed: 1.0                                   # cells per tick, (0, 1]
+    payload_kg: 80
+    zones: [aisle, storage, goal, dock, packing]
+    zones_loaded: [aisle, goal, dock, packing]   # not under racks while loaded
+    energy: {capacity_wh: 1000, idle_w: 20, move_w: 140, payload_w_per_kg: 1.5, handling_w: 40}
+  - name: picker
+    capabilities: [pick, pack]
+    speed: 0.5                                   # one cell every two ticks
+    handling_speed: 1.5                          # works stages 1.5x faster
+    zones: [aisle, dock, packing]
+    charger_types: [standard]                    # cannot use fast chargers
+    sensing_range: 5                             # partial observability
+    energy: {capacity_wh: 600, idle_w: 15, move_w: 90, handling_w: 120}
+    failure: {rate: 0.0002, repair_ticks: 30}    # random breakdowns
+```
+
+**3. Fleet.** Set how many robots of each type there are and their initial charge. A group can
+override fields of its type, for example to model an aged battery.
+
+```yaml
+fleet:
+  - {type: agv, count: 5, initial_soc: [0.5, 1.0]}
+  - {type: agv, name: agv_old, count: 1, overrides: {energy: {capacity_wh: 500}}}
+  - {type: picker, count: 3}
+```
+
+**4. Chargers.** Charger types differ in power, and each type takes a share of the docks.
+
+```yaml
+charger_types:
+  - {name: standard, power_w: 800, share: 1}
+  - {name: fast, power_w: 2500, share: 1}
+```
+
+**5. Task types.** A task type defines its roles (who is needed, how many, and how close they must
+be) and its stages (where, how long and with which roles). The `carrier_role` holds the payload. A
+carrier role with `count > 1` means joint transport.
+
+```yaml
+task_types:
+  - name: tote
+    carrier_role: carrier
+    weight: {kind: uniform, low: 1, high: 15}
+    deadline: 300
+    roles:
+      - {name: carrier, capability: transport, presence: on_cell}
+      - {name: picker, capability: pick, presence: adjacent, radius: 1}
+    stages:
+      - {name: pick, at: origin, roles: [carrier, picker], duration: 3}
+      - {name: pack, at: "zone:packing", roles: [carrier, picker], duration: 2}
+      - {name: drop, at: destination, roles: [carrier], duration: 1}
+  - name: pallet                                 # 90-150 kg: two 80 kg AGVs must carry it together
+    carrier_role: carriers
+    priority: 2
+    weight: {kind: normal, mean: 110, std: 15, low: 90, high: 150}
+    roles:
+      - {name: carriers, capability: transport, count: 2, presence: on_cell}
+    stages:
+      - {name: lift, at: origin, roles: [carriers], duration: 4}
+      - {name: drop, at: destination, roles: [carriers], duration: 2}
+```
+
+**6. Jobs (optional).** A job links tasks by dependencies and by location.
+
+```yaml
+jobs:
+  - name: order_and_return
+    tasks:
+      - {key: order, type: tote}
+      - {key: back, type: return_tote, depends_on: [order], origin_from: order.destination}
+```
+
+**7. Demand.** Demand comes from any number of streams. Each stream is a backlog, Poisson arrivals
+(constant or piecewise rates), a batch, or a trace of release times.
+
+```yaml
+demand:
+  - {kind: backlog, open: 3, task_type: tote}                               # always 3 totes waiting
+  - {kind: poisson, task_type: pallet, rates: [[0, 0.005], [1000, 0.02]]}   # a peak after tick 1000
+  - {kind: poisson, job: order_and_return, rate: 0.004}
+```
+
+**8. Rewards, observations and episode length.**
+
+```yaml
+rewards: {task_completed: 1.0, late_per_tick: -0.01, energy_per_kwh: -0.2, stranded: -10.0}
+observation: {task_slots: 8, task_visibility: global}
+max_steps: 2000
+action_mode: macro            # or primitive
+```
+
+**9. Run it.**
+
 ```python
-env.action_space  
-env.observation_space  
+env = bt.make("examples/tutorial.yaml")              # a path, a dict or a bt.ScenarioConfig
+env = gym.make("battery_tarware/Warehouse-v2", scenario="examples/tutorial.yaml")
+
+cfg = bt.get_scenario("advanced")                    # or start from a built-in and edit it
+cfg["fleet"][0]["count"] = 10
+env = bt.make(cfg, max_steps=3000, action_mode="primitive")   # top-level overrides
 ```
 
-The returned spaces are from the gymnasium library (`gymnasium.spaces`) Each element of the tuple corresponds to an agent, meaning that `len(env.action_space) == env.n_agents` and `len(env.observation_space) == env.n_agents` are always true. Where `env.n_agents = env.n_agvs + env.n_pickers`.
-
-The reset and step functions again are almost identical to a generic gymnasium environment:
-
-```python
-seed = 21
-obs = env.reset(seed=seed)  # a tuple of observations
-
-actions = env.action_space.sample()  # the action space can be sampled
-print(actions)  # (np.int64(106), np.int64(138))
-n_obs, reward, truncated, terminated, info = env.step(actions)
-
-print(truncated)    # [False, False, False, False, False]
-print(terminated)    # [False, False, False, False, False]
-print(reward)  # [np.float64(-0.001), np.float64(-0.001), np.float64(-0.001), np.float64(-0.001), np.float64(-0.001)]
-```
-which leads us to the main difference compared to a generic gymnasium environment: the reward and the terminated and truncated flags are lists, and each element corresponds to the respective agent.
-
-Finally, the environment can be rendered for debugging purposes:
-```python
-env.render()
-```
-and should be closed before terminating:
-```python
-env.close()
-```
-
-## Rendering Updates
-
-The rendering system has been updated to properly display different agent types with distinct shapes and include battery level indicators:
-
-- **AGVs** are rendered as **hexagons** (6 sides)
-- **Pickers** are rendered as **diamonds** (4 sides)  
-- **Agents** are rendered as **octagons** (8 sides)
-
-The `resolution` parameter in `tarware/rendering.py` is now correctly used to determine the number of polygon sides for each agent type. Battery levels are displayed as colored rectangles near each agent:
-- Green: >60% charge
-- Yellow: 20-60% charge  
-- Red: <20% charge
-
-These updates ensure proper visual representation of the heterogeneous agent types and their energy status during training and evaluation.
-
-# Heuristic
-
-The environment also provides a pre-defined heuristic to use as a baseline. The heuristic logic for processing orders works similarly to a First in First out queuing system, where the closest available AGV and Picker are assigned the first order in the queue. The agents then travel toward the requested shelf using the A* path-finder. Once the AGV loads the shelf it transports it to the closest delivery location and back to the closest empty shelf location.
-
-The logic for running one heuristics episode can be found in `tarware/heuristic.py` and an example of running the heuristic on a tiny version of the environment can be found in `scripts/run_heuristic.py` and executed with the following command:
-
-```sh
-
-python scripts/run_heuristic.py --num_episodes=10000 --seed=0 --render
+Configuration mistakes are rejected with an explanation. Examples are unknown keys, a capability
+no robot has, a load heavier than the strongest possible carrier crew, a dependency cycle or an
+unknown zone:
 
 ```
-# Please Cite
-If you use this environment, consider citing:
+ConfigError: task type 'solo': role 'carrier' needs 1 robot(s) with 'fly', fleet has 0
 ```
-@misc{krnjaic2023scalable,
-      title={Scalable Multi-Agent Reinforcement Learning for Warehouse Logistics with Robotic and Human Co-Workers},
-      author={Aleksandar Krnjaic and Raul D. Steleac and Jonathan D. Thomas and Georgios Papoudakis and Lukas Schäfer and Andrew Wing Keung To and Kuan-Ho Lao and Murat Cubuktepe and Matthew Haley and Peter Börsting and Stefano V. Albrecht},
-      year={2023},
-      eprint={2212.11498},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG}
+
+## What is configurable
+
+Each robot type sets the fields below; each fleet group can override them.
+
+| Dimension | Fields | Effect |
+|---|---|---|
+| **Capability** | any set of strings: `transport`, `pick`, `lift`, `inspect`, `manipulate`, ... | which task roles a robot can fill |
+| **Physical performance** | `speed` (cells per tick, fractional), `payload_kg`, `handling_speed`, `zones`, `zones_loaded` | travel time; what it may carry; how fast it works; where it may drive, empty or loaded |
+| **Resources** | battery: `capacity_wh`, `idle_w`, `move_w`, `payload_w_per_kg`, `handling_w`, `max_charge_w`, `charge_efficiency`; compatible `charger_types`; `initial_soc` range; breakdowns: `failure.rate`, `repair_ticks` | how long it can work; where and how fast it recharges; when it is out of service |
+| **Information** | `sensing_range`, `comm_range` (one-hop relay), `localization_noise`; task board `global` or `sensing` | what each robot observes |
+| **Cooperation** | per task type: roles `{capability, count, presence (on_cell or adjacent), radius, stay}`, ordered stages `{at, roles, duration}`, a `carrier_role` | crew composition, rendezvous and synchronized work; joint transport when the carrier role has `count > 1` |
+
+Tasks, demand and the environment are configured the same way:
+
+| | Options |
+|---|---|
+| **Task types** | any number of them; roles; stages at `origin`, `destination` or any `zone:<name>`; payload `weight` (`fixed`, `uniform`, `normal`, `choice`); `priority`; `deadline`; `origin` and `destination` zones |
+| **Jobs** | dependency DAGs of tasks, with location chaining (`origin_from: "order.destination"`) |
+| **Demand** | `backlog`, `poisson` (constant or piecewise `rates`), `batch`, `trace`; one task type, one job or a weighted `mix` per stream; any number of streams |
+| **Chargers** | several types, each with its own `power_w` and `share` of the docks |
+| **Map** | ASCII (custom zone symbols, one-way cells, walls) or a generator (`rack_rows`, `rack_cols`, `rack_height`, `goals`, `docks`, `aisle_width`, `one_way`) |
+| **Rewards** | task completion (× priority), stage completion, energy (per kWh), lateness (per tick), stranding, per tick |
+
+A coalition is *feasible* only if all of the following hold:
+
+- every role is filled by distinct, operational robots with the right capability;
+- the carriers' combined payload capacity covers the load;
+- every member can reach its cells within its allowed zones;
+- every member's estimated energy for its part leaves a reserve.
+
+`env.unwrapped.sim.feasible_coalitions(task_id)` enumerates the feasible coalitions, ranked by
+estimated completion time.
+
+## Built-in scenarios
+
+Each tier adds new cooperation constraints, not just more robots.
+
+| Scenario | Gym id | Robots | Tasks | Main challenges |
+|---|---|---|---|---|
+| `basic` | `battery_tarware/Basic-v2` | 6 AGVs, 3 pickers | SOLO (1 AGV), STANDARD (AGV + picker) and LARGE (AGV + 2 pickers), each picked, delivered and returned | role coupling: pickers are needed at pickup and at return |
+| `intermediate` | `battery_tarware/Intermediate-v2` | light/fast and heavy/slow AGVs (one group with an aged battery), fast and standard pickers | totes, cases, pallets (heavy AGVs only), oversize loads carried jointly by two AGVs | heterogeneity within roles, joint transport, peak and trough demand, fast chargers that heavy AGVs cannot use, pickers that sense only 6 cells |
+| `advanced` | `battery_tarware/Advanced-v2` | AGVs, forklifts, mobile manipulators, inspection drones | orders through a quality-check zone, bulky joint orders, inbound jobs (receive → inspect, linked by location), relocations | 4 capability types, custom zones, dependency DAGs, deadlines, breakdowns, noisy drones with small batteries |
+
+`battery_tarware/Warehouse-v2` runs any scenario. `bt.get_scenario(name)` returns a built-in as an
+editable dict.
+
+## Interfaces
+
+**Gymnasium** (`BatteryTarwareEnv`)
+
+- `observation_space` is `Dict({robot_name: Dict(self, robots, tasks, chargers, action_mask)})`;
+  all entries are float32 and bounded. `robots` holds only the robots that this robot can see, at
+  positions that include its localization noise.
+- `action_space` is `MultiDiscrete([n_actions] * n_robots)`. `action_mode` selects the action set:
+  - `macro` (the default): `0` no-op; `1..K` join the task in board slot k; `K+1..K+C` charge at
+    charger c; the last action releases the robot. Movement is automatic.
+  - `primitive`: `wait`, `up`, `down`, `left`, `right`, `interact`, `release`. `interact` docks at
+    a charger, or joins the task the robot is positioned for.
+- The reward is the team reward. Per-robot credit is in `info["robot_rewards"]`.
+- `info` holds:
+  - `action_mask`: n_robots × n_actions;
+  - `events`: the typed transition log for this tick;
+  - `metrics`;
+  - `invalid_actions`.
+- `terminated`: the finite demand is done, or every robot is stranded. `truncated`: `max_steps` has
+  been reached.
+- Render modes: `rgb_array`, `ansi`, `human` (matplotlib).
+
+**PettingZoo**: `battery_tarware.pettingzoo_env.BatteryTarwareParallelEnv(scenario, reward_mode="individual" | "team")`
+passes `pettingzoo.test.parallel_api_test`. It also provides `state()` for centralized critics.
+
+**Coordinators** are objects with `reset(env)` and `act(env) -> actions`.
+
+- A centralized coordinator can also call the validated simulator API on `env.unwrapped.sim`:
+  `assign`, `assign_coalition`, `release`, `send_to_charger` and `feasible_coalitions`. Every call
+  returns `(ok, reason)`.
+- Built in: `GreedyCoalitionCoordinator(rule)` and `RandomCoordinator`.
+- Dispatching rules: `fifo`, `edd`, `spt`, `cr`, `priority`. Each is defined in full in `bt.RULES`.
+
+**State for external code**: `env.unwrapped.state_view()` is a frozen snapshot of the robots, tasks
+and chargers. `.to_arrays()` returns contiguous, fixed-dtype numpy arrays (schema version 1, int32
+`(row, col)` coordinates). C++ or other native coordinators can read them directly, for example
+through pybind11 `py::array_t`.
+
+## How a tick works
+
+Each tick runs these phases in order (details in [docs/semantics.md](docs/semantics.md)):
+
+1. **Actions**: join a task role, go and charge, or release; in primitive mode, move or interact.
+2. **Breakdowns**: random failures and repairs. A failed robot stops but keeps its commitment.
+3. **Movement**:
+   - *Macro mode*: robots move with [PIBT](https://doi.org/10.1016/j.artint.2022.103752). Robots
+     in the way are pushed aside, joint carriers move as one unit, and distances respect zones and
+     one-way cells.
+   - *Primitive mode*: simultaneous moves with deterministic conflict resolution.
+4. **Stage work**: a stage advances only while its whole crew is present and operational, at the
+   slowest member's handling speed. Crews are recruited stage by stage.
+5. **Energy**: idle, driving, payload (each carrier pays for its share), handling and charging
+   power, in watts, integrated over `seconds_per_tick`.
+   - A battery at 0 % strands the robot permanently.
+   - A stranded carrier drops its payload for another crew to recover.
+6. **Demand**: new tasks and jobs are released. Dependent tasks become ready once their
+   prerequisites complete.
+
+Every random process (spawn positions, demand, task sampling, failures and observation noise) has
+its own seeded stream, so `reset(seed)` reproduces a run exactly.
+
+## Baselines
+
+These are full-length episodes over seeds 0–4, produced by `python benchmarks/baselines.py`:
+
+| Scenario | Policy | Tasks completed | Mean latency (ticks) | Late | Energy (kWh) | Stranded |
+|---|---|---|---|---|---|---|
+| basic | greedy (FIFO) | 203.0 ± 11.0 | 77 | 0.0 | 2.51 | 0.0 |
+| basic | random (masked) | 3.6 ± 2.2 | 302 | 0.0 | 3.06 | 0.0 |
+| intermediate | greedy (FIFO) | 134.4 ± 8.9 | 68 | 0.0 | 3.00 | 0.0 |
+| intermediate | random (masked) | 11.2 ± 2.8 | 671 | 0.0 | 7.13 | 2.0 |
+| advanced | greedy (FIFO) | 293.0 ± 33.2 | 217 | 3.8 | 9.45 | 0.0 |
+| advanced | greedy (priority) | 258.6 ± 54.4 | 211 | 14.0 | 8.82 | 0.4 |
+| advanced | random (masked) | 0.6 ± 0.8 | 1394 | 0.0 | 15.43 | 0.8 |
+
+Compare these numbers only within a scenario. The tiers differ in map size, fleet, demand process,
+task mix and episode length. Raw task counts are therefore not normalized for difficulty and do not
+rank the tiers: advanced completing more tasks than basic does not make it easier. Intermediate is
+demand-limited; its Poisson arrivals, not the fleet, cap throughput.
+
+On one CPU core the simulator runs about 400–1100 ticks per second with the greedy baseline.
+
+## Citing, licence and acknowledgements
+
+If you use Battery-TA-RWARE, please cite it using [CITATION.cff](CITATION.cff) and state the
+package version:
+
+```bibtex
+@software{battery_ta_rware,
+  author  = {Niu, Xuezhi},
+  title   = {Battery-TA-RWARE: heterogeneous multi-robot cooperation under battery constraints},
+  version = {2.0.0},
+  year    = {2026},
+  url     = {https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE}
 }
 ```
 
-![SexyCat](docs/img/IMG_5208.gif)
+Battery-TA-RWARE grew out of [TA-RWARE](https://github.com/raulsteleac/task-assignment-robotic-warehouse)
+(Krnjaic et al., 2022), which builds on [RWARE](https://github.com/semitable/robotic-warehouse)
+(Papoudakis et al., 2021). Version 2 is a new engine. The macro-mode movement is an independent
+implementation of PIBT (Okumura et al., 2022) with a restricted swap operation (Okumura, 2023). See
+[ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md) for full credits.
+
+The v1 environment (package `tarware`) remains available on the [`v1`](../../tree/v1) branch and at
+tag `legacy-v1.1.0`.
+
+The software is released under the MIT licence; see [LICENSE](LICENSE). Changes are listed in
+[CHANGELOG.md](CHANGELOG.md).

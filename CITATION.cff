@@ -1,36 +1,77 @@
-cff-version: 1.0.0
+cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
+title: "Battery-TA-RWARE: heterogeneous multi-robot cooperation under battery constraints"
+version: 2.0.0
+date-released: 2026-11-05
+url: "https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE"
+license: MIT
 authors:
-- family-names: "Steleac"
-  given-names: "Raul"
-title: "Task-Assignment Multi-Robot Warehouse (TA-RWARE)"
-version: 1.0.2
-date-released: 2024-03-14
-url: "https://github.com/raulsteleac/task-assignment-robotic-warehouse"
-preferred-citation:
-  type: conference-paper
-  authors:
-  - family-names: "Aleksandar"
-    given-names: "Krnjaic"
-  - family-names: "Steleac"
-    given-names: "Raul"
-  - family-names: "Thomas"
-    given-names: "Jonathan"
-  - family-names: "Papoudakis"
-    given-names: "Georgios"
-  - family-names: "Schäfer"
-    given-names: "Lukas"
-  - family-names: "Wing Keung To"
-    given-names: "Andrew"
-  - family-names: "Lao"
-    given-names: "Kuan-Ho"
-  - family-names: "Cubuktepe"
-    given-names: "Murat"
-  - family-names: "Haley"
-    given-names: "Matthew"
-  - family-names: "Börsting"
-    given-names: "Peter"
-  - family-names: "Albrecht"
-    given-names: "Stefano"
-  title: "Scalable Multi-Agent Reinforcement Learning for Warehouse Logistics with Robotic and Human Co-Workers"
-  url: "https://arxiv.org/abs/2212.11498"
+  - family-names: "Niu"
+    given-names: "Xuezhi"
+    affiliation: "Cyber-physical Systems Lab, Uppsala University"
+repository-code: "https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE"
+keywords:
+  - multi-robot systems
+  - heterogeneous robots
+  - task allocation
+  - coalition formation
+  - battery
+  - warehouse
+  - gymnasium
+references:
+  - type: conference-paper
+    title: "Scalable Multi-Agent Reinforcement Learning for Warehouse Logistics with Robotic and Human Co-Workers"
+    url: "https://arxiv.org/abs/2212.11498"
+    authors:
+      - family-names: "Krnjaic"
+        given-names: "Aleksandar"
+      - family-names: "Steleac"
+        given-names: "Raul"
+      - family-names: "Thomas"
+        given-names: "Jonathan"
+      - family-names: "Papoudakis"
+        given-names: "Georgios"
+      - family-names: "Schäfer"
+        given-names: "Lukas"
+      - family-names: "To"
+        given-names: "Andrew Wing Keung"
+      - family-names: "Lao"
+        given-names: "Kuan-Ho"
+      - family-names: "Cubuktepe"
+        given-names: "Murat"
+      - family-names: "Haley"
+        given-names: "Matthew"
+      - family-names: "Börsting"
+        given-names: "Peter"
+      - family-names: "Albrecht"
+        given-names: "Stefano V."
+  - type: conference-paper
+    title: "Benchmarking Multi-Agent Deep Reinforcement Learning Algorithms in Cooperative Tasks"
+    url: "https://arxiv.org/abs/2006.07869"
+    authors:
+      - family-names: "Papoudakis"
+        given-names: "Georgios"
+      - family-names: "Christianos"
+        given-names: "Filippos"
+      - family-names: "Schäfer"
+        given-names: "Lukas"
+      - family-names: "Albrecht"
+        given-names: "Stefano V."
+  - type: article
+    title: "Priority inheritance with backtracking for iterative multi-agent path finding"
+    doi: "10.1016/j.artint.2022.103752"
+    authors:
+      - family-names: "Okumura"
+        given-names: "Keisuke"
+      - family-names: "Machida"
+        given-names: "Manao"
+      - family-names: "Défago"
+        given-names: "Xavier"
+      - family-names: "Tamura"
+        given-names: "Yasumasa"
+  - type: conference-paper
+    title: "Improving LaCAM for Scalable Eventually Optimal Multi-Agent Pathfinding"
+    url: "https://arxiv.org/abs/2305.03632"
+    authors:
+      - family-names: "Okumura"
+        given-names: "Keisuke"
