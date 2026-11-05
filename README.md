@@ -6,22 +6,113 @@
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://GitHub.com/Naereen/StrapDown.js/graphs/commit-activity)
 [![GitHub license](https://img.shields.io/github/license/Naereen/StrapDown.js.svg)](https://github.com/Naereen/StrapDown.js/blob/master/LICENSE)
 
-> **Battery-TA-RWARE v2 (branch `v2-dev`, in development).** This branch adds `battery_tarware`, a
-> standalone kernel for heterogeneous, battery-constrained multi-robot cooperation (cooperative
-> SOLO/STANDARD/LARGE tasks with AGV + picker crews, calibrated battery and charging, tiled layouts,
-> external arrivals, charger capacity), with read-only state views, a task-dependency model and
-> trajectory fingerprints. The original Gymnasium environment below (`tarware`, v1.1.0) is unchanged
-> and frozen at tag `legacy-v1.1.0`.
->
-> ```python
-> import battery_tarware as bt
-> env = bt.make_tiled_warehouse(tile_rows=2, tile_cols=3, num_agvs=19, num_pickers=7)
-> env.reset(seed=42)
-> done, info = env.step([0] * len(env.agents))      # macro action per robot; 0 = no-op
-> ```
-> Roadmap and design: [docs/v2/ROADMAP.md](docs/v2/ROADMAP.md) ·
-> [docs/v2/SIMULATION_CONTRACTS_V1.md](docs/v2/SIMULATION_CONTRACTS_V1.md) ·
-> [docs/v2/PROVENANCE.md](docs/v2/PROVENANCE.md). Tests: `python -m pytest -q tests/`.
+# Battery-TA-RWARE v2: heterogeneous multi-robot cooperation under battery constraints
+
+> Branch `v2-dev` (in development). The v2 kernel is the `battery_tarware` package. The original
+> Gymnasium environment documented further down (`tarware`, v1.1.0) is unchanged and frozen at tag
+> `legacy-v1.1.0`.
+
+In Battery-TA-RWARE no robot can do every job, and no robot can work forever. Robots differ in what
+they can do, where they can go and how fast they drain. Tasks differ in which team they need. Chargers
+differ in where they are, how many there are and how fast they charge. Every delivery is a small
+coalition that must meet in the same place at the same time, twice, with enough battery left.
+
+## How heterogeneous is it?
+
+Everything below is implemented in `battery_tarware` and checked by the test suite unless marked
+**planned**.
+
+### 1. Robots: two classes with disjoint capabilities
+
+| | AGV | Picker |
+|---|---|---|
+| Capability | **transport**: lifts and carries a shelf | **pick / lift-assist**: needed to load a shelf and to put it back |
+| Can carry a shelf | yes | never |
+| Where it can move | aisles and free rack cells when empty; aisles only when loaded (except its target cell); stored shelves block it | aisles (highways) and goal cells only |
+| Energy per move | unloaded 0.0107 %; loaded 0.0139 % × (1 + 0.04 × payload kg) | 1.25 × an AGV's loaded move (`picker_energy_factor`), plus a lift cost per assist |
+| Full-battery endurance | 13.0 h empty; ≈ 8.3 h with a 5 kg payload; ≈ 5.6 h with 20 kg | 8.0 h of walking |
+
+Energy is calibrated to an OMRON LD-250-class AMR (25.6 V, 72 Ah) at 5 s per step; a fast charger
+takes a robot from 20 % to 80 % in 130 min (1560 steps). AGVs and pickers can be mixed in any ratio.
+
+### 2. Tasks: three cooperation patterns
+
+| Package | Crew | Mean weight | What has to happen |
+|---|---|---|---|
+| SOLO | 1 AGV | 2.5 kg | the AGV lifts, delivers and returns the shelf alone |
+| STANDARD | 1 AGV + 1 picker | 5.0 kg | a picker must be within one cell of the AGV (diagonals count) at pickup **and** when the shelf goes back into storage |
+| LARGE | 1 AGV + 2 pickers | 8.75 kg | two pickers must be within one cell of the AGV at pickup and again at return; the heavier payload drains the AGV faster |
+
+Weights are drawn per request (normal, σ = 2 kg, clipped to [0.5, 20] kg) and feed the AGV's energy
+cost. Pickers busy waiting for an AGV, or helping with a return, are unavailable to everyone else.
+This is the source of the cross-role coupling.
+
+### 3. Energy states across the fleet
+
+`initial_battery_profile` sets how state of charge differs between robots at reset:
+`legacy` (random 20-100 %), `constant`, `uniform` in [low, high], `bimodal` (alternating low and
+high), `agv_low` or `picker_low` (one class starts depleted). After reset, charge levels spread
+further according to each robot's workload and payloads.
+
+### 4. Charging infrastructure
+
+| Knob | Options |
+|---|---|
+| Charger placement | top rows, bottom rows, spread, all rows (`charger_rows`, `bottom_charger_rows`, `charger_spread`, `charger_all_rows`) |
+| Scarcity | `charger_ratio` < 1: only a spatially balanced subset of docks charges; the others are parking only |
+| Layout | `charger_layout="concentrated"`: the same number of chargers in a single band |
+| Power | `charger_power="split"`: the same total power, but the half nearest the goals charges at 1.5× and the rest at 0.5× |
+
+### 5. Demand
+
+| Knob | Options |
+|---|---|
+| Task mix | any SOLO / STANDARD / LARGE distribution (`package_distribution`), from transport-heavy to picker-heavy |
+| Arrival process | saturated replenished queue, or seeded external arrivals: `constant` rate, or `shift` (alternating peak and trough at equal total demand) |
+| Layout and scale | parametric RWARE grids, or tiled warehouses (one-way lanes, off-lane docks, goals in every rack block) at any tile count |
+
+### All at once
+
+```python
+from battery_tarware.definitions import PackageType as P
+from battery_tarware.protocol_v4 import ArrivalSpec, make_tiled_warehouse_v4
+
+env = make_tiled_warehouse_v4(
+    tile_rows=2, tile_cols=3, num_agvs=19, num_pickers=7,         # role heterogeneity
+    package_distribution={P.SOLO: 0.1, P.STANDARD: 0.3, P.LARGE: 0.6},   # picker-heavy coalitions
+    initial_battery_profile="bimodal", initial_battery_low=30.0,  # half the fleet starts at 30 %
+    charger_ratio=0.5, charger_power="split",                     # 13 of 26 docks charge, at 1.5x or 0.5x
+    arrivals=ArrivalSpec(profile="shift", rate=0.25, period=2880, amplitude=0.5, mix=(0.1, 0.3, 0.6)),
+    max_steps=17280)                                              # 24 h of operation
+env.reset(seed=7)
+done, info = env.step([0] * len(env.agents))   # one macro action per robot; 0 = no-op
+```
+
+### Where v2 is going (planned)
+
+The current model has role heterogeneity: AGV versus picker. v2 extends it to heterogeneity within a
+role and makes coalition feasibility an explicit part of the environment:
+
+| Dimension | Today | Planned |
+|---|---|---|
+| Capability | transport vs pick | configurable sets (transport, lift, pick, inspect, manipulate) per robot |
+| Physical performance | same speed; class-specific movement rules | per-robot speed, payload limit, handling time, workspace |
+| Resources | class-specific consumption, payload-dependent drain, mixed initial SoC, heterogeneous chargers | per-robot battery capacity and consumption, charger compatibility |
+| Information | global state | per-robot sensing range, localization noise, communication |
+| Cooperation | fixed crews (1 / 2 / 3 robots) with synchronized pickup and return | joint-capability requirements, spatial and synchronization constraints, multi-stage task DAGs (`battery_tarware.tasks`, already available as a standalone model) |
+
+Task requirements + robot capabilities + joint execution constraints → **feasible coalitions** will
+be computed by the environment. Choosing among them stays the coordinator's job. Benchmark tiers:
+Basic → Intermediate → Advanced. See [docs/v2/ROADMAP.md](docs/v2/ROADMAP.md).
+
+### Reproducibility
+
+Frozen profiles are regression-locked tick by tick (`tests/test_frozen_profile_fingerprints.py`),
+so new heterogeneity ships as new profiles and never changes existing results. Tests:
+`python -m pytest -q tests/`. Design notes: [ROADMAP](docs/v2/ROADMAP.md) ·
+[contracts](docs/v2/SIMULATION_CONTRACTS_V1.md) · [provenance](docs/v2/PROVENANCE.md).
+
+---
 
 <h1>Table of Contents</h1>
 
