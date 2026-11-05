@@ -1,3 +1,12 @@
+"""
+Gymnasium wrappers for adapting Tarware multi-agent interfaces.
+
+FlattenAgents exposes a flattened joint action/observation view, DictAgents
+converts tuple-style multi-agent data to agent-keyed dictionaries,
+FlattenSAObservation flattens each per-agent observation vector, and
+SquashDones collapses per-agent done flags for older single-done consumers.
+"""
+
 import math
 
 import gymnasium as gym
