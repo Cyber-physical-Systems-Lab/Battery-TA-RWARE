@@ -8,7 +8,16 @@ license: MIT
 authors:
   - family-names: "Niu"
     given-names: "Xuezhi"
-    affiliation: "Uppsala University"
+    affiliation: "Cyber-physical Systems Lab, Uppsala University"
+repository-code: "https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE"
+keywords:
+  - multi-robot systems
+  - heterogeneous robots
+  - task allocation
+  - coalition formation
+  - battery
+  - warehouse
+  - gymnasium
 references:
   - type: conference-paper
     title: "Scalable Multi-Agent Reinforcement Learning for Warehouse Logistics with Robotic and Human Co-Workers"
@@ -36,6 +45,18 @@ references:
         given-names: "Peter"
       - family-names: "Albrecht"
         given-names: "Stefano V."
+  - type: conference-paper
+    title: "Benchmarking Multi-Agent Deep Reinforcement Learning Algorithms in Cooperative Tasks"
+    url: "https://arxiv.org/abs/2006.07869"
+    authors:
+      - family-names: "Papoudakis"
+        given-names: "Georgios"
+      - family-names: "Christianos"
+        given-names: "Filippos"
+      - family-names: "Schäfer"
+        given-names: "Lukas"
+      - family-names: "Albrecht"
+        given-names: "Stefano V."
   - type: article
     title: "Priority inheritance with backtracking for iterative multi-agent path finding"
     doi: "10.1016/j.artint.2022.103752"
@@ -48,3 +69,9 @@ references:
         given-names: "Xavier"
       - family-names: "Tamura"
         given-names: "Yasumasa"
+  - type: conference-paper
+    title: "Improving LaCAM for Scalable Eventually Optimal Multi-Agent Pathfinding"
+    url: "https://arxiv.org/abs/2305.03632"
+    authors:
+      - family-names: "Okumura"
+        given-names: "Keisuke"

@@ -412,10 +412,15 @@ class DemandStream:
 class MapSpec:
     """``ascii`` rows using the legend ``.`` aisle, ``S`` storage, ``G`` goal, ``C`` charger dock,
     ``#`` wall, plus ``zones`` = {symbol: zone name} for custom zones (e.g. receiving, inspection).
+    ``ascii`` is one string or a list of row strings.
     Or a generated layout: ``generator`` = {rack_rows, rack_cols, rack_height, goals, docks}."""
     ascii: Optional[str] = None
     zones: Mapping[str, str] = field(default_factory=dict)
     generator: Optional[Mapping[str, int]] = None
+
+    def __post_init__(self):
+        if isinstance(self.ascii, (list, tuple)):
+            object.__setattr__(self, "ascii", "\n".join(str(row) for row in self.ascii))
 
     def validate(self) -> None:
         _check((self.ascii is None) != (self.generator is None), "map: give exactly one of ascii, generator")
@@ -512,7 +517,7 @@ class ScenarioConfig:
             try:
                 import yaml
             except ImportError as e:  # pragma: no cover
-                raise ConfigError("reading YAML needs pyyaml: pip install 'battery-tarware[yaml]'") from e
+                raise ConfigError("reading YAML needs pyyaml: pip install 'battery-ta-rware[yaml]'") from e
             return ScenarioConfig.from_dict(yaml.safe_load(text))
         return ScenarioConfig.from_dict(json.loads(text))
 

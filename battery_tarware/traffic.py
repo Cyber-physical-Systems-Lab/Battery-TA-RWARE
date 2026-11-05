@@ -8,7 +8,14 @@ carrier group moving as one) takes at most one step:
 * a unit tries its neighbouring cells (and staying) in order of remaining distance to its target;
 * if the chosen cell is occupied, the occupant *inherits* the priority and must step away first
   (recursively); if it cannot, the unit backtracks to its next candidate;
-* a pushed unit may not move into its pusher's cell (no swaps).
+* a pushed unit may not move into its pusher's cell;
+* a restricted *swap* operation, after Okumura, "Improving LaCAM for scalable eventually optimal
+  multi-agent pathfinding", IJCAI 2023, applies only when the wanted cell holds a unit trapped in a
+  dead end;
+* ties in distance prefer unoccupied cells (a choice made for this package).
+
+The code is an independent implementation written for this package; no code was copied from the
+reference implementations.
 
 Distances are exact grid distances within the unit's allowed zones that respect one-way streets
 (reverse BFS from the target, cached). Units that cannot move this tick (failed, charging, working a
@@ -131,7 +138,7 @@ class PIBT:
 
     def _pibt(self, u: Unit, parent: Optional[Unit]) -> bool:
         cands = self._candidates(u)
-        # swap operation (Okumura, LaCAM3): if the best cell holds a unit stuck in a dead end whose only
+        # swap operation (Okumura, IJCAI 2023), restricted to dead ends: if the best cell holds a unit stuck in a dead end whose only
         # way out is u's cell, waiting cannot help -- u steps away instead and pulls that unit out
         swap = None
         if parent is None and cands and cands[0] != u.cell:

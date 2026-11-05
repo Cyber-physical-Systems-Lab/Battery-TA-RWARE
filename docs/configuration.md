@@ -27,7 +27,7 @@ Coordinates are `(row, col)`.
 
 Exactly one of `ascii` or `generator`.
 
-- `ascii`: rows of `.` aisle, `S` storage, `G` goal, `C` charger dock, `#` wall. One-way aisle
+- `ascii`: one string, or a list of row strings, using `.` aisle, `S` storage, `G` goal, `C` charger dock, `#` wall. One-way aisle
   cells `^ v < >` and crossings `+` are optional. Robots leave a one-way cell in its direction, or
   turn off sideways into a non-street cell; they never enter one against its direction.
 - `zones`: `{symbol: name}` for custom zones (for example `I: receiving`). A custom zone can be

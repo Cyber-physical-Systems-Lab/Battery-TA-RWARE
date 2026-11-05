@@ -1,0 +1,102 @@
+# The scenario built step by step in the README ("Build your own scenario").
+#   env = battery_tarware.make("examples/tutorial.yaml")        # needs pyyaml
+name: tutorial
+description: AGVs and pickers; totes are picked, packed and delivered, pallets need two AGVs.
+
+# 1. Map: . aisle  S storage  G goal  C charger dock  # wall  + custom zones
+map:
+  ascii:
+    - "C..C..C..C...."
+    - ".............."
+    - ".SS..SS..SS..."
+    - ".SS..SS..SS..."
+    - ".SS..SS..SS..."
+    - ".............."
+    - ".............."
+    - ".SS..SS..SS..."
+    - ".SS..SS..SS..."
+    - ".............."
+    - "GG...PPP...GG."
+  zones: {P: packing}
+
+# 2. Robot types: capabilities, physical performance, energy, information, reliability
+robot_types:
+  - name: agv
+    capabilities: [transport]
+    speed: 1.0
+    payload_kg: 80
+    zones: [aisle, storage, goal, dock, packing]
+    zones_loaded: [aisle, goal, dock, packing]      # cannot drive under racks while loaded
+    energy: {capacity_wh: 1000, idle_w: 20, move_w: 140, payload_w_per_kg: 1.5, handling_w: 40}
+  - name: picker
+    capabilities: [pick, pack]
+    speed: 0.5                                      # one cell every two ticks
+    handling_speed: 1.5                             # works stages 1.5x faster
+    zones: [aisle, dock, packing]
+    charger_types: [standard]                       # cannot use the fast chargers
+    sensing_range: 5                                # sees robots within 5 cells only
+    energy: {capacity_wh: 600, idle_w: 15, move_w: 90, handling_w: 120}
+    failure: {rate: 0.0002, repair_ticks: 30}
+
+# 3. Fleet: how many of each, initial charge, per-group overrides
+fleet:
+  - {type: agv, count: 5, initial_soc: [0.5, 1.0]}
+  - {type: agv, name: agv_old, count: 1, overrides: {energy: {capacity_wh: 500}}}
+  - {type: picker, count: 3}
+
+# 4. Chargers: types, power and share of the docks
+charger_types:
+  - {name: standard, power_w: 800, share: 1}
+  - {name: fast, power_w: 2500, share: 1}
+
+# 5. Task types: roles (who), stages (where, how long, with whom), payload
+task_types:
+  - name: tote
+    carrier_role: carrier
+    weight: {kind: uniform, low: 1, high: 15}
+    deadline: 300
+    roles:
+      - {name: carrier, capability: transport, presence: on_cell}
+      - {name: picker, capability: pick, presence: adjacent, radius: 1}
+    stages:
+      - {name: pick, at: origin, roles: [carrier, picker], duration: 3}
+      - {name: pack, at: "zone:packing", roles: [carrier, picker], duration: 2}
+      - {name: drop, at: destination, roles: [carrier], duration: 1}
+  - name: pallet                                    # heavier than one AGV can carry: two carry it jointly
+    carrier_role: carriers
+    priority: 2
+    weight: {kind: normal, mean: 110, std: 15, low: 90, high: 150}
+    roles:
+      - {name: carriers, capability: transport, count: 2, presence: on_cell}
+    stages:
+      - {name: lift, at: origin, roles: [carriers], duration: 4}
+      - {name: drop, at: destination, roles: [carriers], duration: 2}
+  - name: return_tote
+    carrier_role: carrier
+    weight: 2
+    origin: goal
+    destination: storage
+    roles:
+      - {name: carrier, capability: transport, presence: on_cell}
+    stages:
+      - {name: grab, at: origin, roles: [carrier], duration: 1}
+      - {name: store, at: destination, roles: [carrier], duration: 1}
+
+# 6. Jobs: tasks linked by dependencies and locations
+jobs:
+  - name: order_and_return
+    tasks:
+      - {key: order, type: tote}
+      - {key: back, type: return_tote, depends_on: [order], origin_from: order.destination}
+
+# 7. Demand: where tasks come from
+demand:
+  - {kind: backlog, open: 3, task_type: tote}                                 # always 3 totes waiting
+  - {kind: poisson, task_type: pallet, rates: [[0, 0.005], [1000, 0.02]]}     # pallets peak after tick 1000
+  - {kind: poisson, job: order_and_return, rate: 0.004}
+
+# 8. Rewards, observations, episode length, action mode
+rewards: {task_completed: 1.0, late_per_tick: -0.01, energy_per_kwh: -0.2, stranded: -10.0}
+observation: {task_slots: 8, task_visibility: global}
+max_steps: 2000
+action_mode: macro

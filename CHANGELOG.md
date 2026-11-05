@@ -2,8 +2,12 @@
 
 ## 2.0.0
 
-A new engine, `battery_tarware`, replaces the TA-RWARE v1 `tarware` package. v1 is preserved at
-git tag `legacy-v1.1.0`.
+A new engine replaces the v1 `tarware` package. The distribution is `battery-ta-rware`; the
+import name is `battery_tarware`. The simulation rules are model version 2.0, documented in
+[docs/semantics.md](docs/semantics.md).
+
+v1 is preserved on branch `v1` (the last v1 `main`, including the PRISM environment) and at tag
+`legacy-v1.1.0`. Version 2 is not trajectory-compatible with v1.
 
 - **Heterogeneity as configuration**:
   - robot types with free-form capabilities, speed, payload, handling speed, allowed zones (empty
@@ -26,11 +30,16 @@ git tag `legacy-v1.1.0`.
   - PettingZoo ParallelEnv;
   - frozen `StateView` with a primitive-array DTO for native coordinators.
 - **Movement**:
-  - PIBT with the dead-end swap operation in macro mode, and conflict-free simultaneous moves in
+  - PIBT with a swap operation restricted to dead ends in macro mode, and conflict-free simultaneous moves in
     primitive mode;
   - maps from ASCII (custom zones, optional one-way cells) or a generator (aisle width, one-way grids).
 - **Scenarios**: three tiers (basic, intermediate, advanced).
 - **Coordinators**: greedy coalition baseline, masked random baseline, and documented dispatching
   rules (FIFO, EDD, SPT, CR, priority).
-- **Tests**: 90+ tests, including Gymnasium `check_env` and PettingZoo `parallel_api_test`.
+- **Documentation**:
+  - README with animations and a step-by-step scenario tutorial
+    ([examples/tutorial.yaml](examples/tutorial.yaml));
+  - configuration reference;
+  - simulation semantics;
+  - acknowledgements.
 - **Dependencies**: base install needs only numpy and gymnasium.

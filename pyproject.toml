@@ -3,17 +3,18 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "battery-tarware"
+name = "battery-ta-rware"
 version = "2.0.0"
 description = "Battery-TA-RWARE: heterogeneous multi-robot cooperation under battery constraints (Gymnasium + PettingZoo)"
 readme = {file = "README.md", content-type = "text/markdown"}
-authors = [{name = "Xuezhi Niu"}, {name = "Cyber-physical Systems Lab, Uppsala University"}]
+authors = [{name = "Xuezhi Niu"}]
+maintainers = [{name = "Xuezhi Niu"}]
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
 keywords = ["multi-robot", "task allocation", "coalition formation", "warehouse", "battery", "gymnasium",
             "pettingzoo", "reinforcement learning", "multi-agent path finding"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -28,14 +29,13 @@ dependencies = [
 pettingzoo = ["pettingzoo>=1.24"]
 yaml = ["pyyaml>=6.0"]
 render = ["matplotlib>=3.6"]
-test = ["pytest>=7", "pettingzoo>=1.24", "pyyaml>=6.0"]
 all = ["pettingzoo>=1.24", "pyyaml>=6.0", "matplotlib>=3.6"]
+gifs = ["pillow>=9.0"]           # docs/make_gifs.py
 
 [project.urls]
 Repository = "https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE"
+Documentation = "https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE/tree/main/docs"
+Changelog = "https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 include = ["battery_tarware*"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]

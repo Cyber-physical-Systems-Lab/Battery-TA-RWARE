@@ -1,4 +1,4 @@
-"""PettingZoo ParallelEnv wrapper (``pip install 'battery-tarware[pettingzoo]'``).
+"""PettingZoo ParallelEnv wrapper (``pip install 'battery-ta-rware[pettingzoo]'``).
 
 Agents are robot names. Each agent observes its own Dict observation and gets its own reward
 (``reward_mode="individual"``, credit as in ``info["robot_rewards"]``) or the team reward
@@ -14,7 +14,7 @@ import numpy as np
 try:
     from pettingzoo import ParallelEnv
 except ImportError as e:  # pragma: no cover
-    raise ImportError("battery_tarware.pettingzoo_env needs pettingzoo: pip install 'battery-tarware[pettingzoo]'") from e
+    raise ImportError("battery_tarware.pettingzoo_env needs pettingzoo: pip install 'battery-ta-rware[pettingzoo]'") from e
 
 from gymnasium import spaces
 
