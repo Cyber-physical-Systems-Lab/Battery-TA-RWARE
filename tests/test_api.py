@@ -106,7 +106,10 @@ def test_render(mode):
     out = env.render()
     if mode == "rgb_array":
         H, W = env.sim.layout.shape
-        assert out.shape == (H * 16, W * 16, 3) and out.dtype == np.uint8
+        assert out.shape == (1 + H * 31, 1 + W * 31, 3) and out.dtype == np.uint8
+        from battery_tarware.rendering import STATUS_COLORS, robot_activity, legend
+        assert all(robot_activity(env.sim, r) in STATUS_COLORS for r in env.sim.robots)
+        assert len({s for _, s, _ in legend(env.sim)["types"]}) == len(legend(env.sim)["types"])
     else:
         assert out.startswith("tick 0")
 

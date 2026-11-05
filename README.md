@@ -16,10 +16,15 @@ simulator for task allocation, coalition formation and charging. It is a
   </tr>
 </table>
 
-<sub>Circles are robots: the colour is the robot type, the letter its initial, the bar its
-battery and a yellow cap means it is carrying. Red diamonds are open tasks; red lines link each
-crew member to its task. All four runs use the greedy baseline, seed 0. Regenerate them with
-`python docs/make_gifs.py`.</sub>
+<sub>Rendered in the TA-RWARE style:
+**shape** = robot type (hexagon, diamond, triangle, octagon, ...);
+**colour** = activity: orange idle, blue travelling, violet waiting for the crew, red working a
+stage, maroon carrying, green charging, grey broken down, black stranded.
+Shelves are dark blue, a requested shelf (payload waiting) is teal, and a purple frame marks where
+a carried payload is going. The badge is the battery (green > 80 %, yellow > 20 %, red), and the
+tick shows the last move direction.
+All runs use the greedy baseline, seed 0. Regenerate them with `python docs/make_gifs.py`; the
+same image comes from `env.render()` with `render_mode="rgb_array"`.</sub>
 
 The simulator rests on three ideas:
 

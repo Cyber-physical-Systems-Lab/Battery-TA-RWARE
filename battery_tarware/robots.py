@@ -44,6 +44,7 @@ class Robot:
     worked: bool = False                           # worked on a stage this tick
     energy_used_wh: float = 0.0
     distance: int = 0
+    heading: int = 1                               # last move direction (index into MOVES; rendering only)
 
     @property
     def soc(self) -> float:
