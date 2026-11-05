@@ -4,10 +4,17 @@
   <img src="docs/img/explanation.png" width="820" alt="Annotated tick of the basic scenario: robots, shelves, goals, docks and what each colour and shape means">
 </p>
 
-**Heterogeneous multi-robot cooperation under battery constraints.** Battery-TA-RWARE is a
-configurable warehouse simulator for task allocation, coalition formation and charging. It is a
+**A benchmark for heterogeneous multi-robot cooperation under battery constraints**, as a
 [Gymnasium](https://gymnasium.farama.org) environment with a
-[PettingZoo](https://pettingzoo.farama.org) wrapper.
+[PettingZoo](https://pettingzoo.farama.org) wrapper. Four things are modelled explicitly and can be
+configured:
+
+| | |
+|---|---|
+| **Heterogeneous capabilities** | Robots differ in what they can do (capabilities), how fast they move and work, what they can lift, where they may drive, how big their battery is and how much they can see. |
+| **Cooperative task execution** | A task needs a crew: several roles, each with a capability and a count, that must meet at a place and work synchronized stages together, up to joint transport by several carriers. |
+| **Dynamic demand** | Tasks arrive over time as backlog, Poisson (with peaks), batches or traces, as mixes of task types and as dependency-linked jobs, with deadlines and priorities. |
+| **Shared resources** | Robots share aisles (collision-free movement), a limited set of charger docks of different types and power, and batteries that run out. |
 
 > **Version 2 is a new engine.** It is not trajectory-compatible with Battery-TA-RWARE v1 (branch
 > [`v1`](../../tree/v1), tag `legacy-v1.1.0`), or with results obtained on the v1 kernel. The rules
@@ -36,35 +43,48 @@ configurable warehouse simulator for task allocation, coalition formation and ch
 A team of heterogeneous robots serves a stream of warehouse tasks on a grid. In the basic
 scenario, AGVs carry shelves and pickers load them, much as in TA-RWARE. Neither group can finish
 an order alone, so the robots have to meet, at the right shelf and at the right time. Every robot
-runs on a battery that it has to recharge at a limited number of docks.
+runs on a battery that it has to recharge at a limited number of shared docks.
 
-In version 2 all of this is configuration:
+The three built-in tiers add one kind of difficulty at a time. *Basic* couples two roles.
+*Intermediate* adds heterogeneity within roles, joint transport and peak demand. *Advanced* adds
+four capability types, custom zones, dependency DAGs, deadlines and breakdowns. Everything is
+configuration, so the same engine runs your own fleets and tasks
+([build your own scenario](#build-your-own-scenario)).
 
-- **Robots** differ in what they can do, how fast they move, what they can lift, how long their
-  battery lasts, which chargers they can use and how much they can see.
-- **Tasks** say which capabilities they need, how many robots of each, where the crew must meet
-  and for how long.
-- **The environment** works out which teams *can* do a task. Your coordinator or learning agent
-  decides who actually does it.
+The environment works out which teams *can* do a task: capability, carrier capacity,
+reachability and energy reserve. Your coordinator or learning agent decides who actually does
+it.
 
 ## What does it look like?
 
+The four animations show large versions of the built-in tiers and of the tutorial scenario, run by
+the greedy baseline. Each shows the stretch of its episode with the most charging.
+
 <p align="center">
-  <img src="docs/img/large.gif" width="760" alt="large warehouse: 18 AGVs and 9 pickers">
-  <br><b>large</b>: the basic scenario scaled up 3×, with 18 AGVs, 9 pickers and 18 rack blocks
-  (see <a href="#built-in-scenarios">scaling up</a>)
+  <img src="docs/img/basic.gif" width="820" alt="basic scenario, large"><br>
+  <b>basic</b> (3×: 18 AGVs, 9 pickers, 4 × 7 rack blocks of 2 × 8 shelves). Two roles must meet: an AGV and a picker at the shelf for
+  every order, again for the return. The robots start part-charged, so the 8 docks are contested.
 </p>
 
-<table>
-  <tr>
-    <td align="center"><img src="docs/img/basic.gif" width="400" alt="basic scenario"><br><b>basic</b>: AGVs and pickers, pick + return</td>
-    <td align="center"><img src="docs/img/intermediate.gif" width="400" alt="intermediate scenario"><br><b>intermediate</b>: light/heavy AGVs, joint transport</td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/img/advanced.gif" width="400" alt="advanced scenario"><br><b>advanced</b>: AGVs, forklifts, arms, drones, custom zones</td>
-    <td align="center"><img src="docs/img/tutorial.gif" width="400" alt="tutorial scenario"><br><b>tutorial</b>: the scenario built below, in YAML</td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/img/intermediate.gif" width="820" alt="intermediate scenario, large"><br>
+  <b>intermediate</b> (2×: light and heavy AGVs, fast and standard pickers, 4 × 7 rack blocks of 2 × 8 shelves). Heterogeneity within
+  roles, pallets only heavy AGVs can lift, oversize loads carried jointly by two AGVs, peak demand,
+  fast chargers that heavy AGVs cannot use.
+</p>
+
+<p align="center">
+  <img src="docs/img/advanced.gif" width="820" alt="advanced scenario, large"><br>
+  <b>advanced</b> (2×: AGVs, forklifts, mobile manipulators, drones). Four capability types,
+  receiving and quality-check zones, inbound jobs linked by location, deadlines and breakdowns.
+</p>
+
+<p align="center">
+  <img src="docs/img/tutorial.gif" width="820" alt="tutorial scenario, large"><br>
+  <b>tutorial</b> (2×): the scenario <a href="#build-your-own-scenario">built step by step below</a>.
+  Totes are picked, packed in a custom zone and delivered; pallets need two AGVs; pickers can use
+  only the standard chargers.
+</p>
 
 The renderer follows the TA-RWARE style:
 
@@ -78,7 +98,8 @@ The renderer follows the TA-RWARE style:
 
 `env.render()` produces the same image (`render_mode="rgb_array"` or `"human"`; numpy only). The
 GIFs and the figure above come from `python docs/make_gifs.py` and `python docs/make_figure.py`
-(greedy baseline, seed 0; they need Pillow).
+(greedy baseline, seed 0; they need Pillow). Basic robots draw little power: at the standard size
+and full initial charge, the first recharges of a 2000-tick basic episode come near its end.
 
 ## Action space
 
@@ -292,7 +313,7 @@ robot_types:
     payload_kg: 80
     zones: [aisle, storage, goal, dock, packing]
     zones_loaded: [aisle, goal, dock, packing]   # not under racks while loaded
-    energy: {capacity_wh: 1000, idle_w: 20, move_w: 140, payload_w_per_kg: 1.5, handling_w: 40}
+    energy: {capacity_wh: 300, idle_w: 20, move_w: 140, payload_w_per_kg: 1.5, handling_w: 40}
   - name: picker
     capabilities: [pick, pack]
     speed: 0.5                                   # one cell every two ticks
@@ -300,7 +321,7 @@ robot_types:
     zones: [aisle, dock, packing]
     charger_types: [standard]                    # cannot use fast chargers
     sensing_range: 5                             # partial observability
-    energy: {capacity_wh: 600, idle_w: 15, move_w: 90, handling_w: 120}
+    energy: {capacity_wh: 250, idle_w: 15, move_w: 90, handling_w: 120}
     failure: {rate: 0.0002, repair_ticks: 30}    # random breakdowns
 ```
 
@@ -310,7 +331,7 @@ override fields of its type, for example to model an aged battery.
 ```yaml
 fleet:
   - {type: agv, count: 5, initial_soc: [0.5, 1.0]}
-  - {type: agv, name: agv_old, count: 1, overrides: {energy: {capacity_wh: 500}}}
+  - {type: agv, name: agv_old, count: 1, overrides: {energy: {capacity_wh: 180}}}
   - {type: picker, count: 3}
 ```
 
@@ -444,18 +465,21 @@ Each tier adds new cooperation constraints, not just more robots.
 `battery_tarware/Warehouse-v2` runs any scenario. `bt.get_scenario(name)` returns a built-in as an
 editable dict.
 
-**Scaling up.** The *large* animation above is basic scaled up 3×: a 25 × 26 grid (rows × columns), 18 AGVs and
-9 pickers. The greedy baseline completes about 275 tasks in 2000 ticks there, with no robot
-stranded.
+**Scaling up.** Any scenario can be made larger by editing its dict: the map generator (or the
+ASCII map), the fleet counts, the demand and `observation.task_slots`. `scale()` in
+[docs/make_gifs.py](docs/make_gifs.py) builds the large versions in the animations: basic 3× and
+intermediate 2×, both on a 4 × 7 grid of 2 × 8-shelf rack blocks; advanced 2×, with the map tiled twice side by side and 1.5× demand; tutorial 2×.
+All four run without stranding a robot. For example, basic at 3× on a 4 × 7 grid of rack blocks, each 2 shelves wide and 8 deep (44 × 30 cells):
 
 ```python
 cfg = bt.get_scenario("basic")
-cfg["map"] = {"generator": {"rack_rows": 3, "rack_cols": 6, "rack_height": 5, "goals": 6, "docks": 8}}
+cfg["map"] = {"generator": {"rack_rows": 4, "rack_cols": 7, "rack_height": 8, "goals": 7, "docks": 8}}
 for group in cfg["fleet"]:
     group["count"] *= 3                      # 18 AGVs, 9 pickers
+    group["initial_soc"] = [0.25, 0.6]
 cfg["demand"][0]["open"] *= 3                # 24 tasks kept open
 cfg["observation"] = {"task_slots": 32}
-env = bt.make(cfg)
+env = bt.make(cfg)                           # greedy baseline: about 220 tasks in 2000 ticks
 ```
 
 ## Interfaces
@@ -472,8 +496,10 @@ passes `pettingzoo.test.parallel_api_test`. It also provides `state()` for centr
 - A centralized coordinator can also call the validated simulator API on `env.unwrapped.sim`:
   `assign`, `assign_coalition`, `release`, `send_to_charger` and `feasible_coalitions`. Every call
   returns `(ok, reason)`.
-- Built in: `GreedyCoalitionCoordinator(rule)` and `RandomCoordinator`.
-- Dispatching rules: `fifo`, `edd`, `spt`, `cr`, `priority`. Each is defined in full in `bt.RULES`.
+- Two reference baselines are built in. `GreedyCoalitionCoordinator` assigns feasible coalitions
+  greedily and recharges below a threshold. Its task order is a standard dispatching rule
+  (`fifo` by default; the others are listed in `bt.RULES`). `RandomCoordinator` is a masked
+  random policy. They are reference points, not tuned methods.
 
 **State for external code**: `env.unwrapped.state_view()` is a frozen snapshot of the robots, tasks
 and chargers. `.to_arrays()` returns contiguous, fixed-dtype numpy arrays (schema version 1, int32
