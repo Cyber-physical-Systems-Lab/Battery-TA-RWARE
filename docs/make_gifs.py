@@ -82,13 +82,45 @@ def frame(env, title):
     return img
 
 
-def scale(cfg, k, generator=None, demand=None, initial_soc=None):
+LARGE_RACKS = {"rack_rows": 4, "rack_cols": 7, "rack_height": 8}   # 4 x 7 blocks of 2 x 8 shelves
+
+
+def large_map(goals=7, docks=12, first_column=None, bottom_zone=None):
+    """The large rack layout as ASCII rows. ``first_column`` = {block row: symbol} turns the shelves
+    of the left-most rack block in that block row into a custom zone; ``bottom_zone`` = (symbol, n)
+    puts n cells of a custom zone in the middle of the bottom (goal) row."""
+    from battery_tarware.layout import generate_ascii
+    rows = [list(r) for r in generate_ascii(goals=goals, docks=docks, **LARGE_RACKS).strip("\n").splitlines()]
+    blocks, current = [], []
+    for y, row in enumerate(rows):
+        if "S" in row:
+            current.append(y)
+        elif current:
+            blocks.append(current)
+            current = []
+    first = rows[blocks[0][0]].index("S")
+    for b, sym in (first_column or {}).items():
+        for y in blocks[b]:
+            rows[y][first] = rows[y][first + 1] = sym
+    if bottom_zone:
+        sym, n = bottom_zone
+        bottom = rows[-1]
+        mid = len(bottom) // 2
+        free = sorted((i for i, c in enumerate(bottom) if c == "."), key=lambda i: abs(i - mid))
+        for i in sorted(free[:n]):
+            bottom[i] = sym
+    return ["".join(r) for r in rows]
+
+
+def scale(cfg, k, generator=None, ascii=None, demand=None, initial_soc=None):
     """A large version of a scenario: k times the fleet, the demand (or ``demand`` times) and the
     task board; a bigger generated map, or the ASCII map tiled k times side by side."""
     cfg = copy.deepcopy(cfg)
     cfg["name"] = "%s (large)" % cfg["name"]
     if generator is not None:
         cfg["map"] = {"generator": generator}
+    elif ascii is not None:
+        cfg["map"] = dict(cfg["map"], ascii=ascii)
     else:
         rows = cfg["map"]["ascii"]
         rows = rows.strip("\n").splitlines() if isinstance(rows, str) else list(rows)
@@ -114,20 +146,20 @@ def scale(cfg, k, generator=None, demand=None, initial_soc=None):
 
 
 def large_scenarios():
-    """The four README animations: every scenario scaled up (about 18-27 robots each)."""
+    """The four README animations: every scenario scaled up on the same 4 x 7 rack-block layout."""
     import yaml
     tutorial = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "..", "examples", "tutorial.yaml")))
     return {
-        # 3x: 18 AGVs, 9 pickers; part-charged at the start so the shared docks are contested
+        # 3x: 18 AGVs, 9 picking robots; part-charged at the start so the shared docks are contested
         "basic": scale(bt.get_scenario("basic"), 3, initial_soc=[0.25, 0.6],
-                       generator={"rack_rows": 4, "rack_cols": 7, "rack_height": 8, "goals": 7, "docks": 8}),
-        # 2x: 12 light + 4 heavy AGVs, 10 pickers
-        "intermediate": scale(bt.get_scenario("intermediate"), 2,
-                              generator={"rack_rows": 4, "rack_cols": 7, "rack_height": 8, "goals": 7, "docks": 12}),
-        # 2x fleet on the map tiled twice; 1.5x demand keeps the greedy baseline near balance
-        "advanced": scale(bt.get_scenario("advanced"), 2, demand=1.5),
-        # 2x
-        "tutorial": scale(tutorial, 2),
+                       generator=dict(LARGE_RACKS, goals=7, docks=8)),
+        # 2x: 12 tote AGVs, 4 pallet AGVs, 10 picking robots
+        "intermediate": scale(bt.get_scenario("intermediate"), 2, generator=dict(LARGE_RACKS, goals=7, docks=12)),
+        # 2x: receiving shelves in the top-left block, quality check in the bottom-left block
+        "advanced": scale(bt.get_scenario("advanced"), 2, demand=1.0,
+                          ascii=large_map(goals=7, docks=12, first_column={0: "I", 3: "Q"})),
+        # 3x: a packing station in the middle of the goal row
+        "tutorial": scale(tutorial, 3, demand=2, ascii=large_map(goals=6, docks=10, bottom_zone=("P", 4))),
     }
 
 
