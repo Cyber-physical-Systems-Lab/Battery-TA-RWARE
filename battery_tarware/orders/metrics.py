@@ -235,6 +235,7 @@ CATEGORY = {"sequencing": "scheduling decision", "coalition_unavailable": "coali
             "blocked_dependency": "task dependencies", "blocked_inventory": "inventory condition",
             "blocked_access": "access (no loaded route)", "breakdown": "robot breakdown",
             "failure_recovery": "failure and retry", "unassigned": "no scheduler decision",
+            "deadlock": "navigation deadlock (suspected stall)",
             "travel": "travel", "execution": "execution"}
 
 
@@ -267,6 +268,7 @@ def diagnose(trace: Dict, closed: Dict, arrival: Dict, T: int) -> Dict:
                 failure.append({"task": tid, "reason": tr["failure_reason"], "blocking_resource": tr.get("blocking_resource"),
                                 "last_progress_tick": tr.get("last_progress_tick")})
         np_ticks = {c: v for c, v in ticks.items() if c in NON_PROGRESS}
+        stalled = [tid for tid in (row.get("tasks") or "").split("|") if tid and (tasks.get(tid, {}).get("stalls") or 0) > 0]
         if row["state"] == "failed" and failure:
             r0 = failure[-1]["reason"]
             cause = ("congestion" if "waiting_cell" in r0 or "no_progress" in r0 else
@@ -274,6 +276,11 @@ def diagnose(trace: Dict, closed: Dict, arrival: Dict, T: int) -> Dict:
                      "failure_recovery")
         elif row["state"] == "cancelled":
             cause = "blocked_inventory"
+        elif stalled:                                 # its crew stopped making progress (stall detector)
+            cause = "deadlock"
+            st = [(sp[0], sp[1], tid) for tid in stalled for sp in spans.get(tid, [])
+                  if sp[2] in ("congestion", "coalition_waiting")]
+            evidence["deadlock"] = list(max(st, key=lambda x: (x[1] - x[0], x[2]))) if st else None
         else:
             cause = max(np_ticks, key=lambda c: (np_ticks[c], c)) if np_ticks else "travel"
         unsuccessful.append({"order_id": oid, "state": row["state"], "age": T - row["arrival"], "cause": cause,

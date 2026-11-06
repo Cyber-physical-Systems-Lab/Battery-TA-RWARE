@@ -429,3 +429,17 @@ def test_tracker_in_order_mode_links_trips_to_orders():
     assert [(r["order_task"], r["op"], r["shelf_id"], r["inventory_package"]) for r in rows] == \
         [("T00000", "relocation", "S0000", None), ("T00001", "outbound", "S0000", "P00000")]
     assert [r["status"] for r in rows] == ["delivered", "stored"]      # a relocation ends at its destination
+
+
+def test_relocation_of_a_shelf_that_is_away_waits_without_error():
+    """Regression: a relocation without a destination, accepted while its shelf is out on another task,
+    must wait (blocked) instead of choosing a location from an unknown shelf cell."""
+    env, sim = make([{"arrival": 0, "op": "outbound", "packages": ["P00000"]}])
+    m = sim.orders
+    run(env, until=lambda s: m.inventory.shelves["S0000"].status == "in_transit")
+    m.submit({"op": "relocation", "shelves": ["S0000"]})
+    run(env, ticks=1)
+    t = m.tasks["T00001"]
+    assert t.state == OTaskState.BLOCKED and t.reason == "inventory:shelf_in_transit" and t.dest_location is None
+    run(env)
+    assert t.state == OTaskState.COMPLETED and m.inventory.shelves["S0000"].location_id == t.dest_location

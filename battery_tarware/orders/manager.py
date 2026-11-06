@@ -405,6 +405,8 @@ class OrderManager:
         if ot.shelf_id is None:                          # shelf reference not resolved yet
             return None
         s = inv.shelves[ot.shelf_id]
+        if s.status != "stored" and not (ot.dest_location and inv.locations[ot.dest_location].reserved_by == ot.task_id):
+            return "inventory:shelf_%s" % s.status       # destination chosen once the shelf is back
         if ot.dest_location is None or inv.locations[ot.dest_location].reserved_by != ot.task_id:
             if ot.explicit_dest:
                 l = inv.locations[ot.dest_location]
