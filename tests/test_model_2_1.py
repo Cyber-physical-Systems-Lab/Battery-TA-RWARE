@@ -191,9 +191,11 @@ def test_pickers_work_on_the_shelf_cell_in_2_1():
 
 @pytest.mark.parametrize("model,aside", [("2.0", False), ("2.1", True)])
 def test_pushed_unit_steps_aside(model, aside):
-    # a fast unit drives down row 0; the idle unit in its way steps into row 1 instead of retreating
-    sim = _Sim("......\n......\n.....G", model)
-    pusher = Unit(0, [], (0, 1), (0, 5), Z, None, False, 9)
-    idle = Unit(1, [], (0, 2), None, Z, None, False, 0)
+    # a fast unit drives down column 0; the idle unit in its way steps into column 1 (2.1) instead of
+    # retreating straight ahead of it (2.0's direction order tries "down" first)
+    sim = _Sim("..\n..\n..\n..\n..\nG.", model)
+    pusher = Unit(0, [], (1, 0), (5, 0), Z, None, False, 9)
+    idle = Unit(1, [], (2, 0), None, Z, None, False, 0)
     PIBT(sim).step([pusher, idle])
-    assert (idle.next == (1, 2)) is aside
+    assert (idle.next == (2, 1)) is aside
+    assert (idle.next == (3, 0)) is (not aside)
