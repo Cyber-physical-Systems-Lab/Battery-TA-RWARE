@@ -120,3 +120,48 @@ def shelf_table(m) -> List[Dict]:
     return [{"shelf_id": s.shelf_id, "status": s.status, "location_id": s.location_id, "home_id": s.home_id,
              "cell": s.cell, "packages": "|".join(s.packages), "incoming": "|".join(s.incoming),
              "busy_task": s.busy_task} for s in m.inventory.shelves.values()]
+
+
+def replay_inventory(events) -> Dict[str, Dict]:
+    """Rebuild every package's final record (status, shelf, rack location, reserved_by) from the event
+    log alone (the same replay the dashboard does per tick). Events are rows ``[tick, type, robots,
+    task, data]`` or ``Event`` objects."""
+    pk: Dict[str, Dict] = {}
+    on: Dict[str, List[str]] = {}
+    shelf: Dict[str, Dict] = {}
+    for e in events:
+        typ, d = (e[1], e[4]) if isinstance(e, (list, tuple)) else (e.type, e.data)
+        if typ != "inventory":
+            continue
+        op = d["op"]
+        if op == "initialised":
+            for s, (loc, pids) in d["shelves"].items():
+                on[s] = list(pids)
+                shelf[s] = {"status": "stored", "loc": loc}
+                for p in pids:
+                    pk[p] = {"status": "stored", "shelf": s, "loc": loc, "reserved": None}
+        elif op == "package_arrived":
+            pk[d["package_id"]] = {"status": "arrived", "shelf": None, "loc": None, "reserved": None}
+        elif op in ("package_reserved", "slot_reserved"):
+            pk[d["package_id"]]["reserved"] = d["task_id"]
+        elif op == "package_unreserved":
+            pk[d["package_id"]]["reserved"] = None
+        elif op in ("shelf_lifted", "shelf_dropped", "shelf_reloaded", "shelf_placed"):
+            st = {"shelf_lifted": "in_transit", "shelf_dropped": "dropped", "shelf_reloaded": "in_transit",
+                  "shelf_placed": "stored"}[op]
+            loc = d.get("location_id") if op == "shelf_placed" else (None if op == "shelf_lifted" else shelf[d["shelf_id"]]["loc"])
+            shelf[d["shelf_id"]] = {"status": st, "loc": loc}
+            for p in on.get(d["shelf_id"], []):
+                pk[p].update(status=st, loc=loc)
+        elif op == "package_put":
+            on.setdefault(d["shelf_id"], []).append(d["package_id"])
+            pk[d["package_id"]].update(status=shelf[d["shelf_id"]]["status"], shelf=d["shelf_id"],
+                                       loc=shelf[d["shelf_id"]]["loc"], reserved=None)
+        elif op == "package_shipped":
+            on[d["shelf_id"]].remove(d["package_id"])
+            pk[d["package_id"]].update(status="shipped", shelf=None, loc=None, reserved=None)
+        elif op == "package_cancelled":
+            pk[d["package_id"]].update(status="cancelled", reserved=None)
+        elif op == "slot_released":
+            pk[d["package_id"]]["reserved"] = None
+    return pk
