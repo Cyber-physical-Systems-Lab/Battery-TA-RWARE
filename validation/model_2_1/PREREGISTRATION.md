@@ -217,3 +217,63 @@ intermediate_large D); the longest no-progress streak is 160 ticks.
 | basic | 203 → 199 (pickers now enter the shelf cell) | — |
 | basic_large | 220 → 224 | — |
 | intermediate | 134.4 → 134.6 | 67.6 → 64.9 |
+
+## Residual-event diagnosis after run 7, and the targeted revision (2026-11-06)
+
+All 11 flagged events were traced before any code change (`validation/model_2_1/trace.py`; traces in
+`out/diag7/ev*.txt`). Each trace records robot, position, target, PIBT priority, blockers, charging state,
+task/stage and crew state.
+
+| Events | Mechanism | Class |
+|---|---|---|
+| 5 × L1 (advanced_large s0/s1 D, s3 B ×2; intermediate_large s2 D) | A slow robot is pushed straight ahead down a corridor by a faster, higher-priority robot for 20–35 cells, away from its target, then walks back. A free side lane existed every time. | B: avoidable movement |
+| 4 × L2 (advanced s4 B ×2; advanced_large s4 D ×2) | Two carriers waiting for the same goal cell repeatedly choose the same staging cell and push each other back and forth | B: avoidable oscillation |
+| 2 × L2 (advanced_large s4 D) | A carrier and its own handler, both waiting for an occupied goal cell, trade the same staging cell | B: avoidable oscillation |
+
+No event was legitimate waiting (A) or a deadlock (C).
+
+**The one targeted revision** (commits ae30764, 98aac5b):
+- **(i) Step aside.** A pushed unit prefers stepping aside over retreating straight ahead of its pusher,
+  at equal distance.
+- **(ii) Waiting spots.** Staging spots are kept by the robot that chose them and are never shared.
+
+Re-running the 11 flagged episodes left one new L2 (advanced s4 B, tick 734): two idle robots recomputed
+their parking target every tick, traded spots and pushed a third robot. Same mechanism as (ii), so the
+revision was completed within the same iteration:
+- **(iii) Parking spots.** Idle robots keep an unshared parking spot.
+
+After that, all 11 episodes have 0 L1/L2 events (longest no-progress streak 7–49 ticks) and 0 stranding.
+
+## AMENDMENT (post hoc, frozen 2026-11-06 before the confirmation run)
+
+**S1 as registered remains FAILED (runs 1–7).** It is never reported as passed.
+
+Occupancy is task-dependent compatibility, not universal cell exclusivity. Coalition membership alone does
+not authorize sharing a cell: the permitted occupancy depends on the active stage and the roles.
+
+**S1a: unintended occupancy = 0.** Two or more robots may share a cell only if:
+- they are co-carriers of one task (joint transport); or
+- they are a task's carrier and its `on_cell` crew, on that task's current stage cell or payload cell.
+  The built-in scenarios allow one picker per shelf cell; a second picker works from the next cell.
+
+**S1b: bounded separation.** Robots allowed to share a cell under S1a in the previous tick (or a subset of
+such a group) may stay together for at most 10 ticks after their task releases them. Any longer is an S1a
+violation.
+- The 10-tick bound is the one accepted in the user's decision. An earlier review suggested "one movement
+  opportunity"; the user's final decision accepted 10 ticks.
+
+**Implementation.** `gate.py` key `S1p`, as at commit 98aac5b (partner tracking as revised after run 6).
+
+**L1/L2.** Thresholds unchanged: zero.
+- Any flagged event must be traced with `trace.py` and classified.
+- Only class A (legitimate task/resource waiting, shown by the trace) may be excluded, and each exclusion
+  is listed.
+- Class B or C fails the gate.
+
+**Confirmation run (run 8).**
+- Commit 98aac5b.
+- Fresh seeds 5–9: never used in any run, smoke test or diagnosis.
+- All 6 scenarios × A–D, macro, plus primitive mode for the 3 tiers.
+- REF episodes from base commit 797000c on seeds 5–9, for R0.
+- The gate verdict uses seeds 5–9 only.
+- Seeds 0–4 are re-run alongside as development seeds (descriptive, and for the advanced throughput analysis).
