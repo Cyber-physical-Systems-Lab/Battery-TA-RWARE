@@ -156,3 +156,12 @@ def test_docks_are_destinations_only_in_2_1():
     idle, mover = Unit(0, [], (1, 1), None, Z, None, False, 0), Unit(1, [], (2, 1), (0, 1), Z, None, False, 5)
     PIBT(sim20).step([idle, mover])
     assert idle.next is not None
+
+
+def test_staging_cells_are_neutral_in_2_1():
+    sim = make()
+    sim.reset(seed=0)
+    goal = sim.layout.cells("goal")[0]
+    dock = sim.layout.cells("dock")[0]
+    assert not sim._neutral_cell(goal) and not sim._neutral_cell(dock)
+    assert sim._neutral_cell(sim.layout.cells("aisle")[0])

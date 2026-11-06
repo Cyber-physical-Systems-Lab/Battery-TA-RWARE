@@ -120,6 +120,7 @@ class Simulator:
         self.rng = {"spawn": spawn, "demand": demand, "tasks": tasks, "fail": fail, "obs": obs}
         self.seed = seed
         self.tick = 0
+        self._hot_tick = None
         self.events = EventLog()
         self.chargers = [Charger(c.id, c.cell, c.type, c.power_w) for c in self.chargers_template]
         aisle = self.layout.cells("aisle")
@@ -716,7 +717,8 @@ class Simulator:
 
     def _staging_cell(self, r: Robot, near: Cell, zones=None) -> Cell:
         zones = r.zones(False) if zones is None else zones
-        if self._degree(r, r.cell, zones) >= 3 and 1 < self.manhattan(r.cell, near) <= 4:
+        neutral = self._neutral_cell if self.config.model != "2.0" else (lambda c: True)
+        if self._degree(r, r.cell, zones) >= 3 and 1 < self.manhattan(r.cell, near) <= 4 and neutral(r.cell):
             return r.cell
         pas = self.passable(zones)
         occ = self.robot_cell_map()
@@ -726,12 +728,28 @@ class Simulator:
             for x in range(max(0, near[1] - 6), min(W, near[1] + 7)):
                 c = (y, x)
                 if not pas[c] or self._degree(r, c, zones) < 3 or self.chebyshev(c, near) <= 1 \
-                        or any(o != r.id for o in occ.get(c, [])):
+                        or any(o != r.id for o in occ.get(c, [])) or not neutral(c):
                     continue
                 key = (self.manhattan(c, near), self.manhattan(c, r.cell), c)
                 if best_key is None or key < best_key:
                     best, best_key = c, key
         return best
+
+    def _neutral_cell(self, c: Cell) -> bool:
+        """Model 2.1: a cell a robot may wait on: plain aisle or storage, and not the current stage
+        cell or payload cell of an open task (waiting there would block another crew's work)."""
+        if self.layout.zone_of(c) not in ("aisle", "storage"):
+            return False
+        if self.__dict__.get("_hot_tick") != self.tick:
+            hot = set()
+            for t in self.tasks.values():
+                if not t.done and t.robots():
+                    if t.stage < len(t.stage_cells):
+                        hot.add(t.stage_cells[t.stage])
+                    if t.payload_cell is not None:
+                        hot.add(t.payload_cell)
+            self._hot, self._hot_tick = hot, self.tick
+        return c not in self._hot
 
     def _degree(self, r: Robot, cell: Cell, zones=None) -> int:
         pas = self.passable(r.zones(False) if zones is None else zones)
