@@ -26,6 +26,12 @@ cancelled      task cancelled
 
 Per robot: total, empty and loaded distance (cells), packages handled, current package and role,
 battery, activity, ticks by activity.
+
+With the order layer (``orders:`` scenario key) a carrier task is one trip of a shelf, not a
+package: records are then numbered ``M00000`` (moves) so they never collide with the inventory's
+persistent package ids, and carry the order, order-layer task, attempt, operation, shelf and
+inventory package as extra columns. The package ledger across trips is the inventory
+(``battery_tarware.orders.reports.package_table``).
 """
 from __future__ import annotations
 
@@ -69,6 +75,7 @@ class PackageRecord:
     completed: Optional[int] = None
     drops: int = 0
     deadline: Optional[int] = None
+    extra: Dict = field(default_factory=dict)        # order layer links (empty without it)
 
     def row(self) -> Dict:
         return {"package_id": self.package_id, "task_id": self.task_id, "task_type": self.task_type,
@@ -79,7 +86,7 @@ class PackageRecord:
                                      for h in self.handlers),
                 "distance_loaded": self.distance_loaded, "released": self.released,
                 "first_assigned": self.first_assigned, "picked": self.picked, "delivered": self.delivered,
-                "completed": self.completed, "deadline": self.deadline, "drops": self.drops}
+                "completed": self.completed, "deadline": self.deadline, "drops": self.drops, **self.extra}
 
 
 @dataclass
@@ -136,14 +143,19 @@ class PackageTracker:
         self._tick = sim.tick
 
     def _scan_new_tasks(self) -> None:
+        orders = getattr(self.sim, "orders", None)
         for t in self.sim.tasks.values():
             if t.id in self.by_task or t.type.carrier_role is None:
                 continue
-            pid = "P%05d" % len(self.packages)
+            pid = ("P%05d" if orders is None else "M%05d") % len(self.packages)
             rack = t.payload_cell if t.payload_cell is not None else t.stage_cells[0]
             self.packages[pid] = PackageRecord(pid, t.id, t.type.name, t.job_id, t.weight_kg, rack, t.destination,
                                                t.released, location=rack, deadline=t.deadline)
             self.by_task[t.id] = pid
+            ot = orders.task_for_sim(t.id) if orders is not None else None
+            if ot is not None:
+                self.packages[pid].extra = {"order_id": ot.order_id, "order_task": ot.task_id, "attempt": ot.attempt,
+                                            "op": ot.op, "shelf_id": ot.shelf_id, "inventory_package": ot.package_id}
 
     def _event(self, e) -> None:
         pid = self.by_task.get(e.task) if e.task is not None else None

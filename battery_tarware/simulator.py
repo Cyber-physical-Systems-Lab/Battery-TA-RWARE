@@ -92,6 +92,10 @@ class Simulator:
             for z in (t.origin, t.destination):
                 if not self.layout.cells(z):
                     raise ConfigError("task type %r: map has no %r cells" % (t.name, z))
+        self.orders = None                              # optional order layer (``orders:`` key)
+        if config.orders is not None:
+            from battery_tarware.orders.manager import OrderManager
+            self.orders = OrderManager(self)
         self.reset(0)
 
     # ───────────────────────────────────────── setup
@@ -141,6 +145,8 @@ class Simulator:
         self._stranded_seen: Set[int] = set()
         self._release_demand()
         self._last_cursor = 0
+        if self.orders is not None:
+            self.orders.reset(seed)
 
     def _base_type(self, robot_name: str) -> str:
         idx = [n for n, _, _ in self._robot_specs].index(robot_name)
@@ -161,7 +167,8 @@ class Simulator:
             return None
         return cells[int(self.rng["tasks"].integers(len(cells)))]
 
-    def _new_task(self, ttype: TaskTypeSpec, job_id=None, origin=None, destination=None, depends=()) -> Optional[Task]:
+    def _new_task(self, ttype: TaskTypeSpec, job_id=None, origin=None, destination=None, depends=(),
+                  weight_kg: Optional[float] = None, deadline: Optional[int] = None) -> Optional[Task]:
         rng = self.rng["tasks"]
         if origin is None:
             origin = self._sample_cell(ttype.origin, self._busy_origins())
@@ -177,11 +184,12 @@ class Simulator:
                 cells.append(destination)
             else:
                 cells.append(self._sample_cell(s.at[5:], set()))
-        weight = max(0.0, ttype.weight.sample(rng))
+        weight = max(0.0, ttype.weight.sample(rng)) if weight_kg is None else float(weight_kg)
+        if deadline is None and ttype.deadline is not None:
+            deadline = self.tick + ttype.deadline
         tid = self._next_task
         self._next_task += 1
-        t = Task(tid, ttype, origin, destination, weight, self.tick, tuple(cells), tuple(depends),
-                 None if ttype.deadline is None else self.tick + ttype.deadline, job_id)
+        t = Task(tid, ttype, origin, destination, weight, self.tick, tuple(cells), tuple(depends), deadline, job_id)
         self.tasks[tid] = t
         self.events.emit(self.tick, "task_released", task=tid, type=ttype.name, weight_kg=round(weight, 3))
         if not depends:
@@ -270,6 +278,8 @@ class Simulator:
 
     def demand_finished(self) -> bool:
         """True when no stream will release anything more and every released item is done."""
+        if self.orders is not None and not self.orders.finished():
+            return False
         for spec, st in zip(self.config.demand, self.streams):
             if spec.kind in ("backlog", "poisson") and (spec.max_items is None or st.released < spec.max_items):
                 return False
@@ -278,6 +288,38 @@ class Simulator:
             if not all(self._item_done(it) for it in st.items):
                 return False
         return True
+
+    def create_task(self, type_name: str, origin: Cell, destination: Cell, weight_kg: Optional[float] = None,
+                    deadline: Optional[int] = None) -> Task:
+        """Release one task with explicit cells (used by the order layer; demand streams sample their
+        own). ``deadline`` is an absolute tick; ``weight_kg`` None samples the task type's weight."""
+        t = self._new_task(self.config.task_type(type_name), None, tuple(origin), tuple(destination), (),
+                           weight_kg, deadline)
+        assert t is not None
+        return t
+
+    def can_cancel(self, task_id: int) -> Tuple[bool, str]:
+        """A task can be cancelled while its payload has not left the origin (no physical effect to
+        undo); afterwards it must be finished or recovered (re-pick after a drop)."""
+        t = self.tasks[task_id]
+        if t.done:
+            return False, "task already %s" % t.state.value
+        if t.stage > 0 or t.carried or (t.type.carrier_role and t.payload_cell != t.stage_cells[0]):
+            return False, "payload has left its origin"
+        return True, "ok"
+
+    def cancel_task(self, task_id: int, reason: str) -> Tuple[bool, str]:
+        """Cancel a task whose payload has not left its origin: its crew is released (reason
+        ``task cancelled``) and the task ends in ``cancelled`` with ``reason``."""
+        ok, why = self.can_cancel(task_id)
+        if not ok:
+            return False, why
+        t = self.tasks[task_id]
+        for rid in list(t.robots()):
+            self.release(rid, "task cancelled")
+        t.record.transition(TaskState.CANCELLED, self.tick, reason=reason)
+        self.events.emit(self.tick, "task_cancelled", task=t.id, reason=reason)
+        return True, "ok"
 
     # ───────────────────────────────────────── queries
     def open_tasks(self) -> List[Task]:
@@ -534,6 +576,8 @@ class Simulator:
         self._work(rewards)
         self._charging_and_energy()
         self._release_demand()
+        if self.orders is not None:
+            self.orders.step()
         # rewards
         R = self.config.rewards
         used_kwh = (np.array([r.energy_used_wh for r in self.robots]) - energy_before) / 1000.0

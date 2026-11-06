@@ -9,6 +9,9 @@ EVENT_TYPES = (
     "robot_joined", "robot_released", "stage_started", "stage_completed", "payload_picked",
     "payload_dropped", "payload_placed", "charge_started", "charge_stopped", "robot_failed",
     "robot_repaired", "robot_stranded", "collision_blocked",
+    # order layer (only emitted when the scenario has ``orders:``)
+    "order_arrived", "order_completed", "order_failed", "order_cancelled", "order_task", "inventory",
+    "stall_suspected",
 )
 
 

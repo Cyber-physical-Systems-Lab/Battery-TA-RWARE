@@ -1,6 +1,40 @@
 # Changelog
 
-## Unreleased (development: role alternatives; package tracking)
+## Unreleased (development: role alternatives; package tracking; order layer)
+
+- **Order layer, Phase 1** (`battery_tarware.orders`; opt-in through the new `orders:` scenario
+  key). Design and confirmed decisions: `docs/design/orders_and_scheduling.md`.
+  - Entities with persistent ids: orders, task groups, order-layer tasks (persist across dispatch
+    attempts), packages, shelves and rack locations. A package keeps its id across inbound,
+    storage, relocation and outbound.
+  - Inventory ledger of logical packages on the existing shelves (`slot_capacity`, default 1):
+    reservations at acceptance, commits only from simulator events (pick-up, drop, re-pick, station
+    hand-off, placement), invariants checked every tick (`InventoryError`).
+  - Operations: outbound, inbound, relocation, mapped to task types by shelf weight. Dependencies
+    within an order, cycles rejected. Blocked tasks never reach the simulator. Explicit relocation
+    prerequisites; `@key` references to an earlier task's package or shelf.
+  - Extended task lifecycle: pending, blocked, ready, assigned, executing, suspended, failed,
+    retrying, completed, cancelled, with reasons. Failure records hold reason, attempt,
+    blocking resource, last progress tick and a snapshot. Order completion is separate from task
+    completion.
+  - `ProgressMonitor`: event-based stall detection that tells legitimate waiting (partner, repair)
+    from no progress. Defaults: 100 ticks, 3 dispatch retries, `auto_retry` off (diagnostic only).
+  - `OrderManager.submit`, `fail_task` and `cancel_order`. A task can be failed or cancelled only
+    while its payload has not left the origin.
+  - Order metrics computed from the event log only (`orders.reports`), with unfinished orders
+    censored. CSV ledgers of orders, tasks, packages and shelves.
+  - Example scenario `orders.scenarios.order_scenario()` (basic map plus a relocation task type).
+  - Simulator additions, inert without `orders:`: `create_task`, `can_cancel`, `cancel_task`, and
+    order event types in the log.
+  - In order mode the package tracker numbers trips `M00000` and links each trip to its order, task
+    and shelf.
+  - Validation:
+    - `validation/orders/identity.py`: task-only runs are identical to 93658ea (22 fingerprints).
+    - `validation/orders/phase1.py`: inbound, outbound, relocation, dependencies and failure
+      recovery; 8 gates pass on seeds 0–9.
+    - `validation/orders/stall_threshold.py`: the longest no-progress streak in successful runs
+      is 39 ticks against the 100-tick threshold.
+    - `tests/test_orders.py`: 27 tests.
 
 - **Package and robot tracking** (`battery_tarware.tracking`, read-only; tracking never changes a
   run).

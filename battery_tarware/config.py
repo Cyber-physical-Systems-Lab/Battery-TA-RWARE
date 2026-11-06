@@ -9,6 +9,7 @@ watt-hours, power in watts, mass in kilograms.
 """
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
 import math
@@ -545,6 +546,7 @@ class ScenarioConfig:
     observation: ObservationSpec = field(default_factory=ObservationSpec)
     description: str = ""
     model: str = "2.1"                   # simulation model version; "2.0" reproduces model 2.0 exactly
+    orders: Optional[Mapping[str, Any]] = None   # optional order layer (battery_tarware.orders); None = off
 
     # ---- construction
     @staticmethod
@@ -583,6 +585,8 @@ class ScenarioConfig:
             d["rewards"] = _build(RewardSpec, d["rewards"], "rewards")
         if "observation" in d:
             d["observation"] = _build(ObservationSpec, d["observation"], "observation")
+        if d.get("orders") is not None:
+            d["orders"] = copy.deepcopy(dict(d["orders"]))
         cfg = _build(ScenarioConfig, d, "scenario")
         cfg.validate()
         return cfg
@@ -716,7 +720,13 @@ class ScenarioConfig:
         _check(len(set(jnames)) == len(jnames) and not (set(jnames) & set(tnames)), "job names must be unique and differ from task types")
         for j in self.jobs:
             j.validate(tnames)
-        _check(len(self.demand) > 0, "scenario needs at least one demand stream")
+        if self.orders is None:
+            _check(len(self.demand) > 0, "scenario needs at least one demand stream")
+        else:
+            _check(len(self.demand) == 0, "a scenario with orders: releases work only through orders; "
+                                          "remove its demand streams")
+            from battery_tarware.orders.spec import OrderSpec
+            OrderSpec.from_dict(self.orders, self)
         for s in self.demand:
             s.validate(tnames, jnames)
         _check(self.action_mode in ("macro", "primitive"), "action_mode must be macro|primitive")
