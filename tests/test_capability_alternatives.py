@@ -233,3 +233,29 @@ def test_without_substitution_trajectories_match_the_plain_scenario():
     b = copy.deepcopy(a)
     assert run(a) == run(b)
     assert bt.get_scenario("intermediate", substitution=False) == a
+
+
+def test_robot_matching_two_positions_is_rejected():
+    d = bt.get_scenario("intermediate", substitution=True)
+    for rt in d["robot_types"]:
+        if rt["name"] == "picking_robot":
+            rt["capabilities"] = list(rt["capabilities"]) + ["load_assist"]
+    with pytest.raises(ConfigError, match="several alternatives"):
+        ScenarioConfig.from_dict(d)
+
+
+def test_state_view_separates_or_from_and():
+    sim = sub_sim()
+    t = new_case(sim)
+    sv = bt.build_state_view(sim)
+    a = sv.to_arrays()
+    i = [x.id for x in sv.tasks].index(t.id)
+    caps = list(sv.capabilities)
+    assert a["task_open_slots"][i] == 2                        # carrier + one support robot
+    roles = dict(zip([r for r, _, _ in sv.tasks[i].open_roles], range(10)))
+    sup, car = roles["picker"], roles["carrier"]
+    assert a["task_role_open"][i, sup] == 1 and a["task_role_open"][i, car] == 1
+    assert a["task_role_eligible"][i, sup, caps.index("pick")] == 1
+    assert a["task_role_eligible"][i, sup, caps.index("load_assist")] == 1
+    assert a["task_role_eligible"][i, car, caps.index("transport")] == 1
+    assert a["task_role_eligible"][i, car].sum() == 1

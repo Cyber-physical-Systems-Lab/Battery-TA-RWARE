@@ -21,6 +21,14 @@ Not part of the 2.1.0 release. Model 2.1 rules are unchanged; configurations wit
   - Effective handling speed is unchanged: stage progress follows the slowest crew member, here the
     carrier tote AGV at 1.0.
   - `load_assist` is an abstract benchmark capability, not a validated physical loading behaviour.
+- **Semantics of capability counts.**
+  - Capability-indexed features are eligibility counts: an either/or slot appears under each
+    capability that can fill it, so they must not be summed.
+  - The exact requirement is in the new state-view arrays `task_open_slots`, `task_role_open` and
+    `task_role_eligible` (OR within a role, AND across roles).
+  - The observation vector is unchanged.
+- **No order-dependent work positions.** A robot type matching two alternatives of one role with
+  different work positions is rejected at configuration time.
 - **Validation.** `validation/capability_alternatives/regress.py` on the variant, standard and large
   maps, inline docks and bays, seeds 0-9: PASS.
   - Under the model 2.1 gate thresholds: no swaps, dock violations, no-progress, oscillation or

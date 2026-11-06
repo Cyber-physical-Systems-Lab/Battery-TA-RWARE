@@ -177,8 +177,9 @@ class RoleSpec:
 
     ``alternatives`` (instead of ``capability``/``presence``/``radius``): several ways to fill the
     same slot, each a capability with its own work position, e.g. a picking robot on the shelf cell
-    or a load-assisting AGV next to it. A robot fills the role through the first alternative whose
-    capability it has; its work position is that alternative's. The carrier role cannot have
+    or a load-assisting AGV next to it. A robot fills the role through the alternative whose capability
+    it has; its work position is that alternative's. (The scenario check rejects a robot type matching
+    two alternatives with different work positions, so list order never decides a work position.) The carrier role cannot have
     alternatives."""
     name: str
     capability: Optional[str] = None
@@ -695,6 +696,12 @@ class ScenarioConfig:
         for t in self.task_types:
             t.validate(zones)
             for role in t.roles:
+                for spec in specs:                       # no silent, order-dependent work positions
+                    hits = [o for o in role.options if o.capability in spec.capabilities]
+                    _check(len({(o.presence, o.radius) for o in hits}) <= 1,
+                           "task type %r role %r: robot type %r matches several alternatives with different work "
+                           "positions (%s); give it one of these capabilities only"
+                           % (t.name, role.name, spec.name, ", ".join(o.capability for o in hits)))
                 capable = [s for s in specs if set(role.capabilities) & set(s.capabilities)]
                 _check(len(capable) >= role.count, "task type %r: role %r needs %d robot(s) with %r, fleet has %d"
                        % (t.name, role.name, role.count, role.capability_key, len(capable)))

@@ -106,10 +106,21 @@ class StateView:
             "charger_power_w": np.array([c.power_w for c in self.chargers], np.float64),
             "charger_occupant": np.array([-1 if c.occupant is None else c.occupant for c in self.chargers], np.int32),
         }
+        # task_open_capability: open slots each capability is ELIGIBLE for (an either/or slot appears under
+        # every capability that can fill it, so do not sum across capabilities). The exact requirement
+        # is in task_open_slots (robots still needed) and task_role_open / task_role_eligible: per open
+        # role, its open count and the capabilities that can fill it (OR within a role, AND across roles).
+        L = max([len(t.open_roles) for t in self.tasks] + [1])
+        a["task_open_slots"] = np.zeros(T, np.int32)
+        a["task_role_open"] = np.zeros((T, L), np.int32)
+        a["task_role_eligible"] = np.zeros((T, L, len(self.capabilities)), np.uint8)
         for i, t in enumerate(self.tasks):
-            for _, cap, n in t.open_roles:
-                for c in cap.split("|"):                       # an alternative slot counts under each capability
+            for j, (_, cap, n) in enumerate(t.open_roles):
+                a["task_open_slots"][i] += n
+                a["task_role_open"][i, j] = n
+                for c in cap.split("|"):
                     a["task_open_capability"][i, caps[c]] += n
+                    a["task_role_eligible"][i, j, caps[c]] = 1
         return {k: np.ascontiguousarray(v) for k, v in a.items()}
 
 

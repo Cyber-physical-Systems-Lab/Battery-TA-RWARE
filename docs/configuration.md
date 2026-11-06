@@ -96,7 +96,7 @@ proportion to `share`, interleaved.
 |---|---|---|
 | `name` | required | |
 | `roles` | required | list of `{name, capability, count: 1, presence: adjacent \| on_cell, radius: 1, stay: false}` |
-| (alternatives) | | instead of `capability`/`presence`/`radius`: `alternatives: [{capability, presence: adjacent \| on_cell, radius: 1}, ...]`. The slot can be filled through any listed capability, and the robot works at that alternative's position (first matching alternative in list order). Not allowed on the carrier role. Capability-indexed features (`task_open_capability`, the observation's open/required capability counts, `Task.required`) count such a slot under every capability that can fill it, and a state-view `open_roles` entry shows the capabilities joined by `\|` |
+| (alternatives) | | instead of `capability`/`presence`/`radius`: `alternatives: [{capability, presence: adjacent \| on_cell, radius: 1}, ...]`. The slot can be filled through any listed capability, and the robot works at that alternative's position (first matching alternative in list order). Not allowed on the carrier role. Capability-indexed features (`task_open_capability`, the observation's open/required capability counts, `Task.required`) are **eligibility counts**: such a slot appears under every capability that can fill it, so they must not be summed across capabilities (an either/or slot would count twice). The exact requirement is in the state view: `open_roles` entries join the capabilities by `\|`, and the arrays `task_open_slots`, `task_role_open` and `task_role_eligible` give, per open role, its count and the capabilities that can fill it (OR within a role, AND across roles). A robot type that matches two alternatives of one role with different work positions is rejected |
 | `stages` | required | ordered list of `{name, at: origin \| destination \| zone:<name>, roles, duration}` |
 | (presence) | | `on_cell`: the robot stands on the stage cell. In model 2.1 a non-carrier `on_cell` role shares that cell with the carrier while they work (e.g. a picker on the shelf cell beside the AGV); give a second helper its own `adjacent` role. `adjacent`: within `radius` (Chebyshev) of the stage cell |
 | `carrier_role` | null | role holding the payload; it must take part in every stage; `count > 1` = joint transport (capacities add up, the carriers move as one unit, each pays for its share) |
@@ -109,8 +109,10 @@ proportion to `share`, interleaved.
 Semantics:
 - A stage progresses only while all its roles are filled and present (`on_cell`: on the stage cell;
   `adjacent`: within `radius`).
-- A robot fills a role with `alternatives` through the first alternative whose capability it has,
-  and must be present at that alternative's position. A robot never holds two roles of one task.
+- A robot fills a role with `alternatives` through the alternative whose capability it has, and must
+  be present at that alternative's position. Configuration validation rejects a robot type that
+  matches two alternatives with different work positions, so list order never decides where a
+  robot works. A robot never holds two roles of one task.
 - Robots are recruited for the current stage only. After a stage, roles the next stage does not
   need are released unless `stay: true`.
 - The payload is picked up when the first stage completes and placed when the last one completes.
