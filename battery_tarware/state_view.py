@@ -70,6 +70,7 @@ class ChargerView:
     type: str
     power_w: float
     occupant: Optional[int]
+    reserved_by: Optional[int] = None      # model 2.1 reservation (None in model 2.0)
 
 
 @dataclass(frozen=True)
@@ -122,5 +123,5 @@ def build_state_view(sim) -> StateView:
         tuple((k, tuple(v)) for k, v in t.assigned.items()),
         tuple((role, t.type.role(role).capability, n) for role, n in t.open_roles().items()),
         t.carried, t.payload_cell) for t in sim.tasks.values() if not t.done)
-    chargers = tuple(ChargerView(c.id, c.cell, c.type, c.power_w, c.occupant) for c in sim.chargers)
+    chargers = tuple(ChargerView(c.id, c.cell, c.type, c.power_w, c.occupant, c.reserved_by) for c in sim.chargers)
     return StateView(SCHEMA_VERSION, sim.tick, sim.layout.shape, robots, tasks, chargers, tuple(sim.capabilities))

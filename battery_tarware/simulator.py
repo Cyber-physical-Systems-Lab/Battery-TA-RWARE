@@ -49,6 +49,7 @@ class Charger:
     type: str
     power_w: float
     occupant: Optional[int] = None
+    reserved_by: Optional[int] = None          # model 2.1: robot the dock is reserved for
 
 
 @dataclass
@@ -119,6 +120,9 @@ class Simulator:
         self.rng = {"spawn": spawn, "demand": demand, "tasks": tasks, "fail": fail, "obs": obs}
         self.seed = seed
         self.tick = 0
+        self._hot_tick = None
+        self._staging_claims = {}
+        self._park_claims = {}
         self.events = EventLog()
         self.chargers = [Charger(c.id, c.cell, c.type, c.power_w) for c in self.chargers_template]
         aisle = self.layout.cells("aisle")
@@ -415,7 +419,22 @@ class Simulator:
             return False, "robot may not enter docks"
         if r.charger == c.id:
             return False, "already assigned to this charger"
+        if self.config.model != "2.0":
+            if c.reserved_by not in (None, r.id) or c.occupant not in (None, r.id):
+                return False, "charger reserved or occupied by another robot"
+            if any(o.cell == c.cell and o.id != r.id and not o.operational for o in self.robots):
+                return False, "charger unavailable: a broken-down or stranded robot stands on it"
         return True, "ok"
+
+    def charger_state(self, c: Charger) -> str:
+        """Model 2.1 dock state: available, reserved, occupied or unavailable."""
+        if c.occupant is not None:
+            return "occupied"
+        if c.reserved_by is not None:
+            return "reserved"
+        if any(o.cell == c.cell and not o.operational for o in self.robots):
+            return "unavailable"
+        return "available"
 
     def send_to_charger(self, robot_id: int, charger_id: int) -> Tuple[bool, str]:
         r, c = self.robots[robot_id], self.chargers[charger_id]
@@ -425,6 +444,8 @@ class Simulator:
         if r.task_id is not None or r.charger is not None:
             self.release(r.id, "going to charge")
         r.status, r.charger = RobotStatus.CHARGE, c.id
+        if self.config.model != "2.0":
+            c.reserved_by = r.id
         r.clear_path()
         return True, "ok"
 
@@ -433,6 +454,8 @@ class Simulator:
             c = self.chargers[r.charger]
             if c.occupant == r.id:
                 c.occupant = None
+            if c.reserved_by == r.id:
+                c.reserved_by = None
             if r.charging:
                 self.events.emit(self.tick, "charge_stopped", robots=(r.id,), charger=c.id, soc=round(r.soc, 4), reason=reason)
         r.charging = False
@@ -591,7 +614,7 @@ class Simulator:
             if r.status == RobotStatus.STRANDED or r.spec.failure.rate <= 0:
                 continue
             if rng.random() < r.spec.failure.rate:
-                if r.charging:
+                if r.charging or (self.config.model != "2.0" and r.charger is not None):
                     self._stop_charging(r, "failure")
                 r.resume_status = RobotStatus.TASK if r.task_id is not None else RobotStatus.IDLE
                 r.status = RobotStatus.FAILED
@@ -616,7 +639,11 @@ class Simulator:
     def _target(self, r: Robot) -> Optional[Cell]:
         """Where a macro-controlled robot wants to be (None = stay)."""
         if r.status == RobotStatus.CHARGE:
-            return self.chargers[r.charger].cell
+            cell = self.chargers[r.charger].cell
+            if self.config.model != "2.0" and r.cell != cell and any(
+                    o.cell == cell and o.id != r.id and self._stationed(o) for o in self.robots):
+                return self._staging_cell(r, cell)          # model 2.1: wait off the approach
+            return cell
         if r.status == RobotStatus.TASK:
             t = self.tasks[r.task_id]
             if r.role == t.type.carrier_role and not t.carried:
@@ -639,9 +666,39 @@ class Simulator:
             if self.chebyshev(r.cell, cell) <= rs.radius:
                 return r.cell
             return self._nearest_standing_cell(r, cell, rs.radius)
+        if r.status == RobotStatus.IDLE and self.config.model != "2.0":
+            return self._parking_target(r)                    # model 2.1: a kept, unshared parking spot
         if r.status == RobotStatus.IDLE and not self._parking(r)[r.cell]:
             return self._nearest_free_aisle(r)               # park out of the way
         return None
+
+    def _parking_target(self, r: Robot) -> Optional[Cell]:
+        """Model 2.1: an idle robot keeps the parking spot it chose while no other robot stands on or
+        has claimed it, so idle robots do not trade spots (and push their neighbours) every tick."""
+        claims = self.__dict__.setdefault("_park_claims", {})
+        write = bool(self.__dict__.get("_in_move"))          # claims change only in the movement phase
+        taken = {c for i, (c, tk) in claims.items() if i != r.id and tk >= self.tick - 1}
+        occ = self.robot_cell_map()
+        mine = claims.get(r.id)
+        if mine is not None and mine[1] >= self.tick - 1 and mine[0] not in taken \
+                and all(o == r.id for o in occ.get(mine[0], [])):
+            if write:
+                claims[r.id] = (mine[0], self.tick)
+            return None if r.cell == mine[0] else mine[0]
+        park = self._parking(r)
+        if park[r.cell] and r.cell not in taken:
+            if write:
+                claims[r.id] = (r.cell, self.tick)
+            return None
+        cells = [c for c in self.layout.cells("aisle") if c not in taken and (not occ.get(c) or occ[c] == [r.id])]
+        if not cells:
+            if write:
+                claims.pop(r.id, None)
+            return None
+        c = min(cells, key=lambda c: (not park[c], self.manhattan(r.cell, c), c))
+        if write:
+            claims[r.id] = (c, self.tick)
+        return None if c == r.cell else c
 
     def _parking(self, r: Robot) -> np.ndarray:
         """Cells where an idle robot may wait: wide aisle cells (>= 3 passable neighbours) at least
@@ -673,11 +730,35 @@ class Simulator:
     def _queue_if_taken(self, r: Robot, t: Task, cell: Cell, zones) -> Cell:
         """Head for ``cell``, unless a robot of another task holds it: then wait at a wide cell
         nearby (a station queue), so robots bound for a busy cell do not clog its approaches."""
+        v21 = self.config.model != "2.0"
         if r.cell == cell:
+            # model 2.1: a robot holding a shared work cell while its own crew is incomplete gives
+            # it up to another task whose crew is complete (no hold-and-wait on shared cells)
+            if v21 and not self._crew_assigned(t) and self._cell_wanted(t, cell, complete=True):
+                return self._staging_cell(r, cell, zones)
             return cell
         if any(o.cell == cell and o.task_id != t.id and self._stationed(o) for o in self.robots):
             return self._staging_cell(r, cell, zones)
+        if v21 and not self._crew_assigned(t) and self._cell_wanted(t, cell, complete=False):
+            # model 2.1 admission: do not occupy a stage cell another task also needs until this
+            # stage's crew is complete
+            return self._staging_cell(r, cell, zones)
         return cell
+
+    def _cell_wanted(self, t: Task, cell: Cell, complete: bool) -> bool:
+        """Does another open, staffed task need ``cell`` for its current stage (with a complete crew
+        for that stage, if ``complete``)?"""
+        for u in self.tasks.values():
+            if u.id != t.id and not u.done and u.robots() and u.stage < len(u.stage_cells) \
+                    and u.stage_cells[u.stage] == cell and (not complete or self._crew_assigned(u)):
+                return True
+        return False
+
+    def _crew_assigned(self, t: Task) -> bool:
+        """Every role of the task's current stage has its full count of robots assigned."""
+        if t.stage >= len(t.type.stages):
+            return True
+        return all(len(t.assigned[role]) >= t.type.role(role).count for role in t.stage_spec.roles)
 
     def _stationed(self, o: Robot) -> bool:
         """Is ``o`` staying where it is (as opposed to passing through)?"""
@@ -692,7 +773,29 @@ class Simulator:
 
     def _staging_cell(self, r: Robot, near: Cell, zones=None) -> Cell:
         zones = r.zones(False) if zones is None else zones
-        if self._degree(r, r.cell, zones) >= 3 and 1 < self.manhattan(r.cell, near) <= 4:
+        v21 = self.config.model != "2.0"
+        neutral = self._neutral_cell if v21 else (lambda c: True)
+        if v21:
+            # model 2.1: a waiting spot belongs to the robot that chose it (kept while valid, never
+            # shared), so robots waiting for the same cell do not push each other back and forth
+            claims = self.__dict__.setdefault("_staging_claims", {})
+            taken = {c for i, (n, c, tk) in claims.items() if i != r.id and tk >= self.tick - 1}
+            mine = claims.get(r.id)
+            occ = self.robot_cell_map()
+            if mine is not None and mine[0] == near and mine[1] not in taken and neutral(mine[1]) \
+                    and all(o == r.id for o in occ.get(mine[1], [])):
+                if self.__dict__.get("_in_move"):
+                    claims[r.id] = (near, mine[1], self.tick)
+                return mine[1]
+            neutral = (lambda c, _n=neutral, _t=taken: _n(c) and c not in _t)
+            best = self._staging_scan(r, near, zones, neutral)
+            if self.__dict__.get("_in_move"):                # claims change only in the movement phase
+                claims[r.id] = (near, best, self.tick)
+            return best
+        return self._staging_scan(r, near, zones, neutral)
+
+    def _staging_scan(self, r: Robot, near: Cell, zones, neutral) -> Cell:
+        if self._degree(r, r.cell, zones) >= 3 and 1 < self.manhattan(r.cell, near) <= 4 and neutral(r.cell):
             return r.cell
         pas = self.passable(zones)
         occ = self.robot_cell_map()
@@ -702,12 +805,28 @@ class Simulator:
             for x in range(max(0, near[1] - 6), min(W, near[1] + 7)):
                 c = (y, x)
                 if not pas[c] or self._degree(r, c, zones) < 3 or self.chebyshev(c, near) <= 1 \
-                        or any(o != r.id for o in occ.get(c, [])):
+                        or any(o != r.id for o in occ.get(c, [])) or not neutral(c):
                     continue
                 key = (self.manhattan(c, near), self.manhattan(c, r.cell), c)
                 if best_key is None or key < best_key:
                     best, best_key = c, key
         return best
+
+    def _neutral_cell(self, c: Cell) -> bool:
+        """Model 2.1: a cell a robot may wait on: plain aisle or storage, and not the current stage
+        cell or payload cell of an open task (waiting there would block another crew's work)."""
+        if self.layout.zone_of(c) not in ("aisle", "storage"):
+            return False
+        if self.__dict__.get("_hot_tick") != self.tick:
+            hot = set()
+            for t in self.tasks.values():
+                if not t.done and t.robots():
+                    if t.stage < len(t.stage_cells):
+                        hot.add(t.stage_cells[t.stage])
+                    if t.payload_cell is not None:
+                        hot.add(t.payload_cell)
+            self._hot, self._hot_tick = hot, self.tick
+        return c not in self._hot
 
     def _degree(self, r: Robot, cell: Cell, zones=None) -> int:
         pas = self.passable(r.zones(False) if zones is None else zones)
@@ -776,6 +895,13 @@ class Simulator:
         return crew
 
     def _pibt_move(self) -> None:
+        self._in_move = True
+        try:
+            self._pibt_move_units()
+        finally:
+            self._in_move = False
+
+    def _pibt_move_units(self) -> None:
         working = {r.id for t in self.tasks.values() for r in (self._stage_crew(t) or [])}
         followers = set()
         units: List[Unit] = []
@@ -809,7 +935,18 @@ class Simulator:
                 r.elapsed = 0
             fixed = (not ok or any(m.charging for m in members) or any(m.id in working for m in members)
                      or credit < 1.0 - 1e-9)
-            units.append(Unit(r.id, members, r.cell, goal, tuple(sorted(zones)), key, fixed, r.elapsed))
+            lasting = not ok or any(m.charging for m in members)     # charging, failed or stranded
+            if self.config.model != "2.0" and not lasting and goal == r.cell and self._stationed(r):
+                lasting = True       # model 2.1: parked on its own stage cell until the stage is done
+            meet = None
+            if self.config.model != "2.0" and r.task_id is not None:
+                t = self.tasks[r.task_id]
+                if r.role == t.type.carrier_role:
+                    meet = (t.id, t.stage_cell if t.carried else t.payload_cell)
+                else:
+                    mc = self._meet_cell(r)
+                    meet = None if mc is None else (t.id, mc)
+            units.append(Unit(r.id, members, r.cell, goal, tuple(sorted(zones)), key, fixed, r.elapsed, lasting, meet))
         self._traffic.step(units)
         for u in units:
             lead = self.robots[u.id]
@@ -862,6 +999,19 @@ class Simulator:
             return 10_000_000 + r.task_id
         return -1 - r.id
 
+    def _meet_cell(self, r: Robot) -> Optional[Cell]:
+        """Model 2.1: the cell where a non-carrier crew member with ``on_cell`` presence works beside
+        its task's carrier (the two may share it), or None."""
+        if r.task_id is None:
+            return None
+        t = self.tasks[r.task_id]
+        if t.type.carrier_role is None or r.role == t.type.carrier_role:
+            return None
+        if t.type.role(r.role).presence != "on_cell":
+            return None
+        s = t.next_stage_for(r.role)
+        return None if s is None else t.stage_cells[s]
+
     def _move(self, intents: Dict[int, Cell]) -> None:
         # one mover per robot, except joint carrier groups (lead only; followers ride along)
         followers: Dict[int, List[int]] = {}
@@ -873,6 +1023,11 @@ class Simulator:
         skip = {f for fs in followers.values() for f in fs}
         positions = {r.id: r.cell for r in self.robots if r.id not in skip}
         shared = {r.id: self._share_key(r) for r in self.robots if r.id not in skip}
+        if self.config.model != "2.0":                  # crew co-location on the stage cell
+            for r in self.robots:
+                cell = self._meet_cell(r)
+                if r.id in shared and cell is not None and intents.get(r.id, r.cell) == cell:
+                    shared[r.id] = 10_000_000 + r.task_id
         intents = {m: c for m, c in intents.items() if m in positions}
         ok = resolve_moves(positions, intents, shared)
         for m, cell in intents.items():
@@ -1003,7 +1158,7 @@ class Simulator:
                 r.status = RobotStatus.IDLE
             if r.energy_wh <= 0:
                 r.energy_wh = 0.0
-                if r.charging:
+                if r.charging or (self.config.model != "2.0" and r.charger is not None):
                     self._stop_charging(r, "empty")
                 r.status = RobotStatus.STRANDED
                 self.events.emit(self.tick, "robot_stranded", robots=(r.id,), task=r.task_id)

@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.1.0 (model 2.1)
+
+Model 2.1 is the new default (`model: "2.1"`). It adds explicit occupancy, docking and waiting rules
+so that robots wait, move, cooperate and charge for reasons that follow from the task and resource
+semantics. `model: "2.0"` (with `get_scenario(name, model="2.0")` for built-ins) reproduces model 2.0
+tick for tick. See [docs/semantics.md](docs/semantics.md#model-21-occupancy-docking-and-waiting).
+
+- **Shelf loading as in TA-RWARE.** The picking robot steps onto the shelf cell beside the AGV to
+  load and unload (built-in picker roles are `on_cell`); a second picker works from the next cell.
+  Occupancy is task-dependent: a carrier and its `on_cell` crew may share their work cell, co-carriers
+  share the payload cell, and unrelated robots never share a cell.
+- **Docks.** Explicit dock states (available, reserved, occupied, unavailable;
+  `Simulator.charger_state`). `send_to_charger` reserves; a dock held by another robot is refused.
+  Docks are destinations only. New `map.dock_layout: bays` for off-corridor docks.
+- **Movement.** Robots route around long-lived obstacles (charging, broken-down, stranded robots and
+  robots on their own work cell) instead of waiting behind them; a pushed robot steps aside instead of
+  retreating ahead of its pusher.
+- **Waiting.** Waiting and parking spots are neutral cells, kept by the robot that chose them and not
+  shared. A robot does not occupy a work cell another task also needs until its own crew is complete
+  (no hold-and-wait on shared work cells).
+- **Behavioural changes.** In basic, pickers now have to reach the shelf cell, which can lower
+  throughput slightly against model 2.0 (by design). Baselines in the README are model 2.1 numbers.
+- **Validation.** A pre-registered behavioural gate (`validation/model_2_1/`): exact reproduction of
+  model 2.0; no vertex or swap conflicts, dock exclusivity, no persistent no-progress or oscillation
+  and no new stranding under model 2.1, on all built-in scenarios and their large versions. The
+  record of every run, revision and the post hoc occupancy amendment is in
+  `validation/model_2_1/PREREGISTRATION.md`.
+- README animations regenerated from model 2.1.
+
 ## 2.0.0
 
 A new engine replaces the v1 `tarware` package. The distribution is `battery-ta-rware`; the

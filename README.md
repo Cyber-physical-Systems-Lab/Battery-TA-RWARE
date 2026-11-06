@@ -16,6 +16,11 @@ configured:
 | **Dynamic demand** | Tasks arrive over time as backlog, Poisson (with peaks), batches or traces, as mixes of task types and as dependency-linked jobs, with deadlines and priorities. |
 | **Shared resources** | Robots share aisles (collision-free movement), a limited set of charger docks of different types and power, and batteries that run out. |
 
+> **Model 2.1** (the default) adds explicit occupancy, docking and waiting rules: a picking robot
+> steps onto the shelf cell beside the AGV, docks are reserved, and robots route around charging or
+> broken-down robots instead of waiting behind them. `model: "2.0"` reproduces model 2.0 exactly. See
+> [docs/semantics.md](docs/semantics.md#model-21-occupancy-docking-and-waiting).
+
 > **Version 2 is a new engine.** It is not trajectory-compatible with Battery-TA-RWARE v1 (branch
 > [`v1`](../../tree/v1), tag `legacy-v1.1.0`), or with results obtained on the v1 kernel. The rules
 > are fixed in [docs/semantics.md](docs/semantics.md) (model version 2.0). Report the package
@@ -72,8 +77,8 @@ the greedy baseline. Each shows the stretch of its episode with the most chargin
 
 <p align="center">
   <img src="docs/img/basic.gif" width="820" alt="basic scenario, large"><br>
-  <b>basic</b> (3×: 18 AGVs, 9 picking robots, 4 × 7 rack blocks of 2 × 8 shelves). Two roles must meet: an AGV and a picking robot at the shelf for
-  every order, again for the return. The robots start part-charged, so the 8 docks are contested.
+  <b>basic</b> (3×: 18 AGVs, 9 picking robots, 4 × 7 rack blocks of 2 × 8 shelves). Two roles must meet: the picking robot steps onto
+  the shelf cell beside the AGV for every order, and again for the return. The robots start part-charged, so the 8 docks are contested.
 </p>
 
 <p align="center">
@@ -96,6 +101,20 @@ the greedy baseline. Each shows the stretch of its episode with the most chargin
   only the standard chargers.
 </p>
 
+**What runs in the animations.** The robots are driven by the built-in reference coordinator
+`GreedyCoalitionCoordinator` (FIFO), not by a tuned or published method. Every tick it:
+
+1. sends each idle robot below 30 % state of charge to the nearest compatible dock that is free and
+   not reserved (Manhattan distance; ties to the more powerful dock); robots below the threshold
+   with no free dock stay where they are and try again next tick;
+2. goes through the open tasks oldest first and gives each the feasible coalition of idle robots with
+   the earliest estimated completion (then the least energy), keeping a 15 % battery reserve, at
+   most 8 tasks per tick.
+
+It does not plan charging ahead, balance docks between robot types, or trade tasks between robots.
+Movement, docking, rendezvous and waiting follow the simulator's rules ([model 2.1](docs/semantics.md#model-21-occupancy-docking-and-waiting)),
+whatever coordinator is used.
+
 The renderer follows the TA-RWARE style:
 
 | Element | Encoding |
@@ -104,7 +123,7 @@ The renderer follows the TA-RWARE style:
 | **Colour** | activity: 🟠 idle · 🔵 travelling to its task · 🟣 in place, waiting for its crew · 🔴 working a stage · 🟤 carrying (maroon) · 🟢 heading to a charger (light) / charging · ⚪ broken down (grey) · ⚫ stranded |
 | **Shelves** | dark blue = stored; teal = requested (a payload waits there, or rides under its carriers); purple frame = where a carried payload is going |
 | **Cells** | dark grey = goal (delivery point); light blue = charger dock; pale colours = custom zones; black = wall |
-| **Badges** | the battery fill level (green > 80 %, yellow > 20 %, red below); a tick for the last move direction; a thin blue line from a crew member to the task it is heading for |
+| **Badges** | the battery fill level (green > 80 %, yellow > 20 %, red below); a tick for the last move direction; a thin blue line from a crew member to the task it is heading for; a thin green line from a robot to the dock it has reserved |
 
 `env.render()` produces the same image (`render_mode="rgb_array"` or `"human"`; numpy only). The
 GIFs and the figure above come from `python docs/make_gifs.py` and `python docs/make_figure.py`
@@ -181,8 +200,13 @@ energy and charging → new demand. The full rules are in [docs/semantics.md](do
 **Movement and collisions.**
 - *Macro mode.* Robots move with [PIBT](https://doi.org/10.1016/j.artint.2022.103752) (Priority
   Inheritance with Backtracking): at most one cell per tick, never into an occupied cell and never
-  swapping with another robot. Higher-priority robots push lower-priority ones aside. Distances
-  respect each robot's allowed zones (`zones`, or `zones_loaded` while carrying) and one-way cells.
+  swapping with another robot. Higher-priority robots push lower-priority ones aside, and a pushed
+  robot steps aside rather than retreating ahead of its pusher. Distances respect each robot's allowed
+  zones (`zones`, or `zones_loaded` while carrying) and one-way cells, and route around robots that
+  stay put (charging, broken down, or standing on their own work cell).
+- *Waiting.* A robot that has to wait (for a busy work cell or dock, or for its partner) waits on a
+  plain aisle or storage cell that no other robot has claimed, never on a goal, dock or another
+  task's work cell. Idle robots park on wide aisle cells away from goals.
 - *Primitive mode.* Moves are resolved simultaneously. A stationary robot blocks its cell, the
   lowest id wins a contested cell, and swaps are rejected. Only the carriers of one payload may
   share a cell.
@@ -194,6 +218,9 @@ energy and charging → new demand. The full rules are in [docs/semantics.md](do
   present (`on_cell`, or `adjacent` within `radius`) and every member is operational. This is
   the rendezvous.
 - Work per tick is the slowest member's `handling_speed`.
+- *Shared cells.* A cell holds one robot, except that the carriers of one task share the payload's
+  cell, and a carrier and its `on_cell` crew (for example the picking robot loading the tote) share
+  the cell of the stage they work. Unrelated robots never share a cell.
 - The payload is picked up after the first stage and placed after the last one.
 - Helpers that the next stage does not need are released, unless their role has `stay: true`.
 - If the whole crew leaves after work has started, the task is *suspended* and keeps its progress.
@@ -206,6 +233,9 @@ Power is drawn every tick and integrated over `seconds_per_tick`:
 P = idle_w + move_w·[moved] + payload_w_per_kg·(weight / n_carriers)·[moved while carrying] + handling_w·[worked]
 ```
 
+- A dock is available, reserved, occupied or unavailable. Sending a robot to a dock reserves it; a
+  dock held by another robot is refused (there is no implicit queue). Docks are destinations only:
+  no robot drives through one. `map.dock_layout: bays` puts docks in bays off the corridor.
 - A robot charges only on a compatible, free dock, at `min(charger power_w, max_charge_w) × charge_efficiency`.
 - It stops automatically when the battery is full.
 - A robot whose battery reaches 0 % is **stranded** for good: it releases its role and drops its
@@ -241,9 +271,9 @@ its own seeded stream, so `reset(seed)` reproduces a run exactly.
 Python ≥ 3.10.
 
 ```bash
-pip install "battery-ta-rware @ git+https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE@v2.0.0"
+pip install "battery-ta-rware @ git+https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE@v2.1.0"
 # with the optional extras (PettingZoo, YAML scenarios, matplotlib window):
-pip install "battery-ta-rware[all] @ git+https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE@v2.0.0"
+pip install "battery-ta-rware[all] @ git+https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE@v2.1.0"
 ```
 
 Or install from a clone:
@@ -468,7 +498,7 @@ Each tier adds new cooperation constraints, not just more robots.
 
 | Scenario | Gym id | Robots | Tasks | Main challenges |
 |---|---|---|---|---|
-| `basic` | `battery_tarware/Basic-v2` | 6 AGVs, 3 picking robots | SOLO (1 AGV), STANDARD (AGV + picking robot) and LARGE (AGV + 2 picking robots), each picked, delivered and returned | role coupling: picking robots are needed at pickup and at return |
+| `basic` | `battery_tarware/Basic-v2` | 6 AGVs, 3 picking robots | SOLO (1 AGV), STANDARD (AGV + picking robot on its shelf cell) and LARGE (AGV + 2 picking robots: one on the shelf cell, one beside it), each picked, delivered and returned | role coupling: picking robots are needed at pickup and at return |
 | `intermediate` | `battery_tarware/Intermediate-v2` | light/fast tote AGVs and heavy/slow pallet AGVs (one group with an aged battery), fast and standard picking robots | totes, cases, pallets (heavy AGVs only), oversize loads carried jointly by two AGVs | heterogeneity within roles, joint transport, peak and trough demand, fast chargers that heavy AGVs cannot use, picking robots that sense only 6 cells |
 | `advanced` | `battery_tarware/Advanced-v2` | AGVs, forklifts, mobile manipulators, inspection drones | orders through a quality-check zone, bulky joint orders, inbound jobs (receive → inspect, linked by location), relocations | 4 capability types, custom zones, dependency DAGs, deadlines, breakdowns, noisy drones with small batteries |
 
@@ -523,13 +553,17 @@ These are full-length episodes over seeds 0–4, produced by `python benchmarks/
 
 | Scenario | Policy | Tasks completed | Mean latency (ticks) | Late | Energy (kWh) | Stranded |
 |---|---|---|---|---|---|---|
-| basic | greedy (FIFO) | 203.0 ± 11.0 | 77 | 0.0 | 2.51 | 0.0 |
-| basic | random (masked) | 3.6 ± 2.2 | 302 | 0.0 | 3.06 | 0.0 |
-| intermediate | greedy (FIFO) | 134.4 ± 8.9 | 68 | 0.0 | 3.00 | 0.0 |
-| intermediate | random (masked) | 11.2 ± 2.8 | 671 | 0.0 | 7.13 | 2.0 |
-| advanced | greedy (FIFO) | 293.0 ± 33.2 | 217 | 3.8 | 9.45 | 0.0 |
-| advanced | greedy (priority) | 258.6 ± 54.4 | 211 | 14.0 | 8.82 | 0.4 |
-| advanced | random (masked) | 0.6 ± 0.8 | 1394 | 0.0 | 15.43 | 0.8 |
+| basic | greedy (FIFO) | 203.6 ± 12.6 | 77 | 0.0 | 2.59 | 0.0 |
+| basic | random (masked) | 5.4 ± 1.6 | 567 | 0.0 | 3.01 | 0.0 |
+| intermediate | greedy (FIFO) | 135.0 ± 9.2 | 66 | 0.0 | 3.05 | 0.0 |
+| intermediate | random (masked) | 13.8 ± 2.8 | 483 | 0.0 | 6.81 | 3.0 |
+| advanced | greedy (FIFO) | 298.8 ± 28.5 | 201 | 2.0 | 9.70 | 0.0 |
+| advanced | greedy (priority) | 288.4 ± 12.4 | 204 | 2.2 | 9.31 | 0.0 |
+| advanced | random (masked) | 1.4 ± 0.8 | 116 | 0.0 | 13.95 | 0.8 |
+
+These are model 2.1 numbers. In basic, model 2.1 changes the picking geometry (the picker has to
+reach the shelf cell), which can lower throughput slightly against model 2.0; the change is
+intentional, not a performance optimization.
 
 Compare these numbers only within a scenario. The tiers differ in map size, fleet, demand process,
 task mix and episode length. Raw task counts are therefore not normalized for difficulty and do not
@@ -547,7 +581,7 @@ package version:
 @software{battery_ta_rware,
   author  = {Niu, Xuezhi},
   title   = {Battery-TA-RWARE: heterogeneous multi-robot cooperation under battery constraints},
-  version = {2.0.0},
+  version = {2.1.0},
   year    = {2026},
   url     = {https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE}
 }

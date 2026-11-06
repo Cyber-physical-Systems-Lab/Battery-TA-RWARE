@@ -142,7 +142,9 @@ class ObservationBuilder:
             chargers = np.zeros((max(1, self.C), self.F_CHARGER), np.float32)
             for c in sim.chargers:
                 chargers[c.id] = [c.cell[0] / max(1, self.H - 1), c.cell[1] / max(1, self.W - 1),
-                                  c.power_w / self.max_power, float(c.occupant is not None),
+                                  c.power_w / self.max_power,
+                                  float(c.occupant is not None if sim.config.model == "2.0"
+                                        else c.occupant not in (None, r.id) or c.reserved_by not in (None, r.id)),
                                   float(r.compatible_with(c.type)), float(r.charger == c.id)]
             out[r.name] = {"self": selfv, "robots": robots, "tasks": tasks, "chargers": chargers,
                            "action_mask": masks[i].astype(np.int8)}
