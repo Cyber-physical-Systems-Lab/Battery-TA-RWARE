@@ -166,6 +166,10 @@ def rgb_array(sim, cell_px: int = 30, crew_lines: bool = True) -> np.ndarray:
                 r = sim.robots[rid]
                 if r.cell != t.stage_cell and not sim.carrying(r) and robot_activity(sim, r) == "travelling":
                     _line(img, center(r.cell), center(t.stage_cell), (150, 190, 235), width=1)
+        # robots on their way to a dock: a thin green line to the dock they hold
+        for r in sim.robots:
+            if r.charger is not None and not r.charging and r.cell != sim.chargers[r.charger].cell:
+                _line(img, center(r.cell), center(sim.chargers[r.charger].cell), (120, 200, 120), width=1)
 
     # robots: carried payload underneath, polygon by type, colour by activity, heading, battery
     by_cell: Dict[Tuple[int, int], List] = {}

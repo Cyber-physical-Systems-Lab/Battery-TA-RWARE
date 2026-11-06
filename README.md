@@ -101,6 +101,20 @@ the greedy baseline. Each shows the stretch of its episode with the most chargin
   only the standard chargers.
 </p>
 
+**What runs in the animations.** The robots are driven by the built-in reference coordinator
+`GreedyCoalitionCoordinator` (FIFO), not by a tuned or published method. Every tick it:
+
+1. sends each idle robot below 30 % state of charge to the nearest compatible dock that is free and
+   not reserved (Manhattan distance; ties to the more powerful dock); robots below the threshold
+   with no free dock stay where they are and try again next tick;
+2. goes through the open tasks oldest first and gives each the feasible coalition of idle robots with
+   the earliest estimated completion (then the least energy), keeping a 15 % battery reserve, at
+   most 8 tasks per tick.
+
+It does not plan charging ahead, balance docks between robot types, or trade tasks between robots.
+Movement, docking, rendezvous and waiting follow the simulator's rules ([model 2.1](docs/semantics.md#model-21-occupancy-docking-and-waiting)),
+whatever coordinator is used.
+
 The renderer follows the TA-RWARE style:
 
 | Element | Encoding |
@@ -109,7 +123,7 @@ The renderer follows the TA-RWARE style:
 | **Colour** | activity: 🟠 idle · 🔵 travelling to its task · 🟣 in place, waiting for its crew · 🔴 working a stage · 🟤 carrying (maroon) · 🟢 heading to a charger (light) / charging · ⚪ broken down (grey) · ⚫ stranded |
 | **Shelves** | dark blue = stored; teal = requested (a payload waits there, or rides under its carriers); purple frame = where a carried payload is going |
 | **Cells** | dark grey = goal (delivery point); light blue = charger dock; pale colours = custom zones; black = wall |
-| **Badges** | the battery fill level (green > 80 %, yellow > 20 %, red below); a tick for the last move direction; a thin blue line from a crew member to the task it is heading for |
+| **Badges** | the battery fill level (green > 80 %, yellow > 20 %, red below); a tick for the last move direction; a thin blue line from a crew member to the task it is heading for; a thin green line from a robot to the dock it has reserved |
 
 `env.render()` produces the same image (`render_mode="rgb_array"` or `"human"`; numpy only). The
 GIFs and the figure above come from `python docs/make_gifs.py` and `python docs/make_figure.py`
