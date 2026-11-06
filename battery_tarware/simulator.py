@@ -676,23 +676,28 @@ class Simulator:
         """Model 2.1: an idle robot keeps the parking spot it chose while no other robot stands on or
         has claimed it, so idle robots do not trade spots (and push their neighbours) every tick."""
         claims = self.__dict__.setdefault("_park_claims", {})
+        write = bool(self.__dict__.get("_in_move"))          # claims change only in the movement phase
         taken = {c for i, (c, tk) in claims.items() if i != r.id and tk >= self.tick - 1}
         occ = self.robot_cell_map()
         mine = claims.get(r.id)
         if mine is not None and mine[1] >= self.tick - 1 and mine[0] not in taken \
                 and all(o == r.id for o in occ.get(mine[0], [])):
-            claims[r.id] = (mine[0], self.tick)
+            if write:
+                claims[r.id] = (mine[0], self.tick)
             return None if r.cell == mine[0] else mine[0]
         park = self._parking(r)
         if park[r.cell] and r.cell not in taken:
-            claims[r.id] = (r.cell, self.tick)
+            if write:
+                claims[r.id] = (r.cell, self.tick)
             return None
         cells = [c for c in self.layout.cells("aisle") if c not in taken and (not occ.get(c) or occ[c] == [r.id])]
         if not cells:
-            claims.pop(r.id, None)
+            if write:
+                claims.pop(r.id, None)
             return None
         c = min(cells, key=lambda c: (not park[c], self.manhattan(r.cell, c), c))
-        claims[r.id] = (c, self.tick)
+        if write:
+            claims[r.id] = (c, self.tick)
         return None if c == r.cell else c
 
     def _parking(self, r: Robot) -> np.ndarray:
@@ -779,11 +784,13 @@ class Simulator:
             occ = self.robot_cell_map()
             if mine is not None and mine[0] == near and mine[1] not in taken and neutral(mine[1]) \
                     and all(o == r.id for o in occ.get(mine[1], [])):
-                claims[r.id] = (near, mine[1], self.tick)
+                if self.__dict__.get("_in_move"):
+                    claims[r.id] = (near, mine[1], self.tick)
                 return mine[1]
             neutral = (lambda c, _n=neutral, _t=taken: _n(c) and c not in _t)
             best = self._staging_scan(r, near, zones, neutral)
-            claims[r.id] = (near, best, self.tick)
+            if self.__dict__.get("_in_move"):                # claims change only in the movement phase
+                claims[r.id] = (near, best, self.tick)
             return best
         return self._staging_scan(r, near, zones, neutral)
 
@@ -888,6 +895,13 @@ class Simulator:
         return crew
 
     def _pibt_move(self) -> None:
+        self._in_move = True
+        try:
+            self._pibt_move_units()
+        finally:
+            self._in_move = False
+
+    def _pibt_move_units(self) -> None:
         working = {r.id for t in self.tasks.values() for r in (self._stage_crew(t) or [])}
         followers = set()
         units: List[Unit] = []

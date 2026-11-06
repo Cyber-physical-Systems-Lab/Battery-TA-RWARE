@@ -199,3 +199,23 @@ def test_pushed_unit_steps_aside(model, aside):
     PIBT(sim).step([pusher, idle])
     assert (idle.next == (2, 1)) is aside
     assert (idle.next == (3, 0)) is (not aside)
+
+
+def test_target_is_a_pure_query():
+    # external code (coordinators, renderers, analysis) may call _target; it must not change the run
+    import battery_tarware as bt
+
+    def run(query):
+        env = bt.make("advanced", max_steps=600)
+        sim = env.unwrapped.sim
+        co = bt.GreedyCoalitionCoordinator()
+        env.reset(seed=1)
+        cells = []
+        for _ in range(600):
+            env.step(co.act(env))
+            if query:
+                for r in sim.robots:
+                    sim._target(r)
+            cells.append(tuple(r.cell for r in sim.robots))
+        return cells
+    assert run(False) == run(True)
