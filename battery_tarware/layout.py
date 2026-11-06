@@ -58,6 +58,25 @@ def generate_ascii(rack_rows: int = 2, rack_cols: int = 3, rack_height: int = 4,
     return "\n".join(rows)
 
 
+def dock_bays(text: str) -> str:
+    """Off-corridor docks: every row made only of dock ('C') and plain aisle ('.') cells, with at
+    least one dock, has its aisle cells turned into walls. Each dock then becomes a one-cell bay that
+    opens onto the row(s) next to it, so a robot charging there blocks no through traffic."""
+    rows = [ln.strip() for ln in text.strip("\n").splitlines() if ln.strip()]
+    out = []
+    for y, ln in enumerate(rows):
+        if "C" in ln and set(ln) <= {"C", "."}:
+            ln = ln.replace(".", "#")
+            for x, ch in enumerate(ln):
+                if ch != "C":
+                    continue
+                nbrs = [rows[y + dy][x] for dy in (-1, 1) if 0 <= y + dy < len(rows)]
+                if not any(c not in "#C" for c in nbrs):
+                    raise ConfigError("map: dock at (%d, %d) has no approach once its row becomes bays" % (y, x))
+        out.append(ln)
+    return "\n".join(out)
+
+
 def _orient(rows: List[str], rack_cols: int) -> List[str]:
     """One-way street grid: corridor columns alternate down/up and street rows alternate, with the
     outer streets forming a loop (down the left, right along the bottom, up the right, left along
@@ -93,7 +112,12 @@ class Layout:
     @staticmethod
     def from_spec(spec: MapSpec, zone_names: Sequence[str]) -> "Layout":
         text = spec.ascii if spec.ascii is not None else generate_ascii(**dict(spec.generator))
-        return Layout.from_ascii(text, spec.zones, zone_names)
+        if getattr(spec, "dock_layout", "inline") == "bays":
+            text = dock_bays(text)
+        lay = Layout.from_ascii(text, spec.zones, zone_names)
+        if getattr(spec, "dock_layout", "inline") == "bays" and lay.one_way:
+            raise ConfigError("map: dock_layout 'bays' cannot be combined with one-way streets")
+        return lay
 
     @staticmethod
     def from_ascii(text: str, custom: Mapping[str, str], zone_names: Sequence[str]) -> "Layout":

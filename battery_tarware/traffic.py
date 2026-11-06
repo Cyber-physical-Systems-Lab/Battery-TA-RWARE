@@ -20,6 +20,11 @@ reference implementations.
 Distances are exact grid distances within the unit's allowed zones that respect one-way streets
 (reverse BFS from the target, cached). Units that cannot move this tick (failed, charging, working a
 stage, or without enough speed credit) are fixed obstacles.
+
+Model 2.1: long-lived obstacles (charging, failed or stranded robots) are walls in the distance field,
+so a unit routes around them instead of waiting in front of them until they leave. Short-lived ones
+(a stage being worked, a unit without speed credit) are still waited for. If no way around exists
+the unit falls back to the model 2.0 field and waits.
 """
 from __future__ import annotations
 
@@ -52,11 +57,12 @@ def reverse_distances(layout, passable: np.ndarray, goal: Cell) -> np.ndarray:
 
 
 class Unit:
-    __slots__ = ("id", "members", "cell", "goal", "zones", "key", "fixed", "priority", "next")
+    __slots__ = ("id", "members", "cell", "goal", "zones", "key", "fixed", "priority", "next", "lasting")
 
-    def __init__(self, id_, members, cell, goal, zones, key, fixed, priority):
+    def __init__(self, id_, members, cell, goal, zones, key, fixed, priority, lasting=False):
         self.id, self.members, self.cell, self.goal = id_, members, cell, goal
         self.zones, self.key, self.fixed, self.priority = zones, key, fixed, priority
+        self.lasting = lasting                   # model 2.1: fixed for longer than a tick or two
         self.next: Optional[Cell] = None
 
 
@@ -64,6 +70,25 @@ class PIBT:
     def __init__(self, sim):
         self.sim = sim
         self._dist: Dict[Tuple[Tuple[str, ...], Cell], np.ndarray] = {}
+        self._walls: Tuple[Cell, ...] = ()
+        self._wdist: Dict[Tuple, np.ndarray] = {}
+
+    def route_distances(self, u: "Unit") -> np.ndarray:
+        """Distances used to rank u's moves: model 2.1 treats long-lived obstacles as walls."""
+        static = self.distances(u.zones, u.goal)
+        walls = [c for c in self._walls if c != u.goal and c != u.cell]
+        if not walls or self.sim.config.model == "2.0":
+            return static
+        key = (u.zones, u.goal, tuple(walls))
+        if key not in self._wdist:
+            if len(self._wdist) > 4096:
+                self._wdist.clear()
+            pas = self.sim.passable(u.zones).copy()
+            for c in walls:
+                pas[c] = False
+            self._wdist[key] = reverse_distances(self.sim.layout, pas, u.goal)
+        d = self._wdist[key]
+        return d if d[u.cell] != INF else static          # no way around: wait as in model 2.0
 
     def distances(self, zones: Tuple[str, ...], goal: Cell) -> np.ndarray:
         key = (zones, goal)
@@ -81,6 +106,7 @@ class PIBT:
         for u in units:
             if u.fixed:
                 self._reserve(u, u.cell)
+        self._walls = tuple(sorted({u.cell for u in units if u.lasting}))
         for u in sorted(units, key=lambda u: (-u.priority, u.id)):
             if u.next is None:
                 self._pibt(u, None)
@@ -107,7 +133,7 @@ class PIBT:
                     busy = any(w is not u and not self._compatible(u, w) for w in self.now.get(c, []))
                     out.append((1, int(busy), k, c))
             return [c for *_, c in sorted(out)]
-        dist = self.distances(u.zones, u.goal)
+        dist = self.route_distances(u)
         out = [(int(dist[u.cell]), 0, -1, u.cell)]
         for k, (dy, dx) in enumerate(MOVES):
             c = (u.cell[0] + dy, u.cell[1] + dx)

@@ -49,6 +49,7 @@ class Charger:
     type: str
     power_w: float
     occupant: Optional[int] = None
+    reserved_by: Optional[int] = None          # model 2.1: robot the dock is reserved for
 
 
 @dataclass
@@ -415,7 +416,22 @@ class Simulator:
             return False, "robot may not enter docks"
         if r.charger == c.id:
             return False, "already assigned to this charger"
+        if self.config.model != "2.0":
+            if c.reserved_by not in (None, r.id) or c.occupant not in (None, r.id):
+                return False, "charger reserved or occupied by another robot"
+            if any(o.cell == c.cell and o.id != r.id and not o.operational for o in self.robots):
+                return False, "charger unavailable: a broken-down or stranded robot stands on it"
         return True, "ok"
+
+    def charger_state(self, c: Charger) -> str:
+        """Model 2.1 dock state: available, reserved, occupied or unavailable."""
+        if c.occupant is not None:
+            return "occupied"
+        if c.reserved_by is not None:
+            return "reserved"
+        if any(o.cell == c.cell and not o.operational for o in self.robots):
+            return "unavailable"
+        return "available"
 
     def send_to_charger(self, robot_id: int, charger_id: int) -> Tuple[bool, str]:
         r, c = self.robots[robot_id], self.chargers[charger_id]
@@ -425,6 +441,8 @@ class Simulator:
         if r.task_id is not None or r.charger is not None:
             self.release(r.id, "going to charge")
         r.status, r.charger = RobotStatus.CHARGE, c.id
+        if self.config.model != "2.0":
+            c.reserved_by = r.id
         r.clear_path()
         return True, "ok"
 
@@ -433,6 +451,8 @@ class Simulator:
             c = self.chargers[r.charger]
             if c.occupant == r.id:
                 c.occupant = None
+            if c.reserved_by == r.id:
+                c.reserved_by = None
             if r.charging:
                 self.events.emit(self.tick, "charge_stopped", robots=(r.id,), charger=c.id, soc=round(r.soc, 4), reason=reason)
         r.charging = False
@@ -591,7 +611,7 @@ class Simulator:
             if r.status == RobotStatus.STRANDED or r.spec.failure.rate <= 0:
                 continue
             if rng.random() < r.spec.failure.rate:
-                if r.charging:
+                if r.charging or (self.config.model != "2.0" and r.charger is not None):
                     self._stop_charging(r, "failure")
                 r.resume_status = RobotStatus.TASK if r.task_id is not None else RobotStatus.IDLE
                 r.status = RobotStatus.FAILED
@@ -616,7 +636,11 @@ class Simulator:
     def _target(self, r: Robot) -> Optional[Cell]:
         """Where a macro-controlled robot wants to be (None = stay)."""
         if r.status == RobotStatus.CHARGE:
-            return self.chargers[r.charger].cell
+            cell = self.chargers[r.charger].cell
+            if self.config.model != "2.0" and r.cell != cell and any(
+                    o.cell == cell and o.id != r.id and self._stationed(o) for o in self.robots):
+                return self._staging_cell(r, cell)          # model 2.1: wait off the approach
+            return cell
         if r.status == RobotStatus.TASK:
             t = self.tasks[r.task_id]
             if r.role == t.type.carrier_role and not t.carried:
@@ -809,7 +833,8 @@ class Simulator:
                 r.elapsed = 0
             fixed = (not ok or any(m.charging for m in members) or any(m.id in working for m in members)
                      or credit < 1.0 - 1e-9)
-            units.append(Unit(r.id, members, r.cell, goal, tuple(sorted(zones)), key, fixed, r.elapsed))
+            lasting = not ok or any(m.charging for m in members)     # charging, failed or stranded
+            units.append(Unit(r.id, members, r.cell, goal, tuple(sorted(zones)), key, fixed, r.elapsed, lasting))
         self._traffic.step(units)
         for u in units:
             lead = self.robots[u.id]
@@ -1003,7 +1028,7 @@ class Simulator:
                 r.status = RobotStatus.IDLE
             if r.energy_wh <= 0:
                 r.energy_wh = 0.0
-                if r.charging:
+                if r.charging or (self.config.model != "2.0" and r.charger is not None):
                     self._stop_charging(r, "empty")
                 r.status = RobotStatus.STRANDED
                 self.events.emit(self.tick, "robot_stranded", robots=(r.id,), task=r.task_id)
