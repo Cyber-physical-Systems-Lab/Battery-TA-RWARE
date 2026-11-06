@@ -852,6 +852,8 @@ class Simulator:
             fixed = (not ok or any(m.charging for m in members) or any(m.id in working for m in members)
                      or credit < 1.0 - 1e-9)
             lasting = not ok or any(m.charging for m in members)     # charging, failed or stranded
+            if self.config.model != "2.0" and not lasting and goal == r.cell and self._stationed(r):
+                lasting = True       # model 2.1: parked on its own stage cell until the stage is done
             units.append(Unit(r.id, members, r.cell, goal, tuple(sorted(zones)), key, fixed, r.elapsed, lasting))
         self._traffic.step(units)
         for u in units:

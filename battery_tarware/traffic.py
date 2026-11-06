@@ -21,7 +21,8 @@ Distances are exact grid distances within the unit's allowed zones that respect 
 (reverse BFS from the target, cached). Units that cannot move this tick (failed, charging, working a
 stage, or without enough speed credit) are fixed obstacles.
 
-Model 2.1: long-lived obstacles (charging, failed or stranded robots) are walls in the distance field,
+Model 2.1: long-lived obstacles (charging, failed or stranded robots, and robots parked on their own
+stage cell waiting for their crew or for their stage to finish) are walls in the distance field,
 so a unit routes around them instead of waiting in front of them until they leave. Short-lived ones
 (a stage being worked, a unit without speed credit) are still waited for. If no way around exists
 the unit falls back to the model 2.0 field and waits.
