@@ -1,9 +1,19 @@
 # Design: order management, dependency-aware scheduling, allocation and evaluation
 
-Status (branch `feat/orders-scheduling`, based on `feat/capability-alternatives`):
-**Phase 1 implemented** (entities, inventory, operations, extended lifecycle, failure detection and
-retries, order metrics from the event log). Phases 2–5 are specified below and not implemented.
-Decisions D1–D6 were confirmed by the maintainer on 2026-11-06.
+Status (branch `feat/orders-scheduling`, based on `feat/capability-alternatives`): **all five phases
+implemented** — order layer (Phase 1), scheduler pipeline with nine rules + WSP ablation and decision
+log (Phase 2), five-level metrics with bottleneck and failure diagnosis (Phase 3), trace recorder and
+offline replay dashboard (Phase 4), paired evaluation harness with exploratory, confirmatory and
+scalability experiments (Phase 5). Decisions D1–D6 were confirmed by the maintainer on 2026-11-06.
+
+| Module (`battery_tarware/orders/`) | Role |
+|---|---|
+| `spec.py`, `scenarios.py` | the `orders:` configuration; example scenario |
+| `inventory.py`, `manager.py`, `lifecycle.py`, `monitor.py` | order layer (Phase 1) |
+| `scheduler.py` | `OrderScheduler(rule)`: pipeline, rules, decision log (Phase 2) |
+| `trace.py`, `metrics.py`, `reports.py` | recorder + per-tick cause attribution; metrics and diagnosis; ledgers (Phase 3) |
+| `dashboard.py` | offline HTML replay (Phase 4) |
+| `run.py`, `evaluation.py`; `experiments/orders/` | episode runner, paired harness; experiments (Phase 5) |
 
 Every feature is opt-in: a scenario without the `orders:` key runs tick for tick as in 2.1.0
 (`validation/orders/identity.py`: 22 trajectory fingerprints identical to commit 93658ea).
@@ -122,15 +132,21 @@ Threshold check on successful task-only traces (`validation/orders/stall_thresho
 FIFO, 3 built-ins × 5 seeds × 3,000 ticks): longest eligible no-progress streak 9 / 16 / 39 ticks
 (basic / intermediate / advanced), no task reached 50, no report at 100.
 
-## 4. Scheduling architecture (Phase 2, specified)
+## 4. Scheduling architecture (Phase 2, implemented: `scheduler.py`)
 
-Every tick a `Scheduler` runs five separate, replaceable steps: (1) release and prioritisation of
-orders; (2) readiness: the order layer above produces the **eligible set**; (3) feasibility: feasible
-coalitions per eligible task (capabilities, alternatives, work positions, payload, battery with the
-common reserve, availability); infeasible tasks keep rejection reasons; (4) assignment: a rule ranks
-**only feasible (task, coalition) pairs** and commits atomically; (5) execution and recovery feed back
-into 2–4. Charging is a shared component (the common rule, or minimum-cost dock matching), so rules
-differ only in step 4. All time-based terms use simulation ticks, never wall-clock time.
+Separation of concerns: **order scheduling** (which eligible task is served, by which feasible crew)
+is the scheduler; **coalition formation** feasibility is the simulator's `feasible_coalitions` (the same
+call for every rule); **navigation** is the simulator's A*/PIBT; **physical execution** (stages,
+carrying, energy) is the simulator. Release, readiness and recovery belong to the order layer.
+
+Every tick: (1) shared charging rule (the greedy baseline's: idle robots below 30% go to the nearest
+free compatible dock); (2) eligible set = released tasks with a role to fill; (3) feasibility over idle
+robots with the common 15% reserve, rejected tasks get a reason code (`infeasible:capability |
+payload | battery | unreachable`, `unavailable:robots_busy | charging | breakdown`; staffability is
+a bipartite matching of distinct robots to role slots); (4) the rule ranks the feasible pairs, which
+are committed atomically in rank order up to 8 per tick, with one re-query for tasks that lost their
+crews; (5) the decision log event. Rules differ only in the ranking. All time terms are in ticks.
+Wall-clock compute time is recorded outside the event log, which stays deterministic.
 
 ### Rule definitions
 
@@ -163,45 +179,76 @@ per task (estimated completion, energy), selection, and per rejected task or coa
 (`not_ready:<cause>`, `infeasible:<capability|payload|battery|zone|unreachable>`, `ranked_lower`,
 `robot_taken`, `budget`), plus computation time and candidates evaluated. Written to the event log.
 
-## 5. Metrics
+## 5. Metrics and diagnosis (Phase 3, implemented)
 
-Phase 1 (implemented, `orders/reports.py`, computed from the event log only): orders arrived /
-completed / failed / cancelled / unfinished; throughput per 1,000 ticks over `(warmup, T]`; lead time
-mean and P95 (completed only); on-time rate over orders whose outcome is known by `T` (open orders
-not yet due are censored and counted separately); energy per completed order; unfinished count and
-age; tasks completed, retries, stalls. Tests reconcile these with the manager's state and with
-package and task event histories.
+Definitions: [docs/metrics.md](../metrics.md). Order, scheduling, robot, coalition and system levels,
+the five primary metrics plus unfinished orders by count and age, a per-tick cause attribution of
+every open task (bottleneck decomposition), and a diagnosis of every unsuccessful order with an
+evidence span in the trace.
 
-Phase 3 adds the remaining primary metric (coalition waiting ratio: robot-ticks present but not
-working because the stage crew is incomplete ÷ robot-ticks committed), the secondary metrics listed
-in the earlier draft (scheduling, robot/coalition and system levels), and the bottleneck
-decomposition (sequencing, coalition, travel, resource, execution, blocked).
+## 6. Traceability and dashboard (Phase 4, implemented; D6)
 
-## 6. Traceability and dashboard (Phase 4; D6)
+`TraceRecorder` (observational) adds to the event log the per-tick robot frames (cell, state of
+charge, status, task, role, activity), carried/dropped shelf cells, series, and cause spans.
+`dashboard.py` writes a single self-contained HTML file from one or more traces (no server, no
+external library): playback, warehouse map, order-task kanban, order queue, dependency graph,
+scheduler decision with scores and outcomes, robot and package tables, battery and backlog charts,
+cause timeline, metrics, diagnosis with jump-to-evidence, event timeline; filters by run (policy),
+order, package, task, robot, coalition and event type; CSV/JSON export. Existing renderer, tracker
+boards, GIF generator and CSV exports are kept. `docs/make_orders_demo.py` writes the compact
+`docs/img/orders_kanban.gif` (committed); the 4.9 MB tracking GIF stays out of Git.
 
-Keep the map renderer, live boards, GIF generator and CSV exports. Add a lightweight offline HTML
-replay generated from recorded logs (no new simulation frontend, no server): select a tick, package,
-order, task or robot; dependency view; event timeline with assignment changes, coalition formation,
-charging, suspensions, retries and failure reasons. The single event log is the authoritative
-source for dashboard, CSVs and metrics. The full-resolution 4.9 MB tracking GIF stays out of Git; a
-shorter optimised demo GIF may be committed.
+## 7. Reproducible evaluation (Phase 5, implemented)
 
-## 7. Reproducible evaluation (Phase 5)
+The order generator draws a fixed number of random numbers per order, so the arrival process
+(times, kinds, priorities, due dates, weights, stations) is identical for every rule on a seed; which
+stored package a line names depends on the inventory at arrival (state-dependent by design).
+`evaluation.run_grid` runs configs × rules × seeds in parallel; `paired` gives per-seed paired
+differences to a reference rule with percentile-bootstrap 95% CIs. Experiments
+(`experiments/orders/`): `exploratory.py` (one factor at a time: arrival rate, task mix, coalition
+requirements, fleet heterogeneity, battery and docks, layout), `confirmatory.py` (pre-registered
+hypotheses on fresh seeds; refuses to run on an uncommitted protocol), `scalability.py`. Task
+sequencing rules (FIFO … CR) and pair rules that also choose the crew (NSP, ZLP_2D, PLB) are
+reported separately; CBBA, Calvo and matched docks remain RA-L reference allocators in RendeCoord.
 
-Workloads are order traces fixed by seed; rules × workloads × seeds; paired differences against a
-reference rule with bootstrap 95% CIs; factors: demand rate, energy ratio (battery, docks),
-capability heterogeneity, dependency complexity. Sequencing rules are reported separately from
-coordination methods (NSP, ZLP_2D, PLB, CBBA, Calvo, matched docks).
+## 7a. Modelling assumptions (where the simulator has no direct representation)
+
+1. Packages are logical units on shelves (no package geometry or manipulation physics); the shelf
+   is what carriers move. Inbound is goods-to-person put-away: the shelf with the reserved slot
+   comes to the station; the hand-off is instantaneous when the station stage completes.
+2. Shelves do not obstruct navigation (zone-based passability, as in 2.1.0); access problems are
+   modelled only through explicit relocation dependencies.
+3. Failures can be declared only before the payload leaves its origin; afterwards the simulator's
+   own recovery (re-pick after a drop) applies. Automatic retries are off by default.
+4. Charging is not scheduled by the rules: all rules share the greedy baseline's charging rule and
+   battery reserve, so battery effects appear identically in every rule's feasible set.
+5. Scheduler runtime is Python wall-clock time on the evaluation machine; compare it across rules on
+   the same machine only.
+6. PLB's conflict term uses the current planned paths of committed robots (PIBT replans every tick):
+   current information only, available to every rule.
+7. An order whose package or shelf is not available at arrival is rejected (cancelled with reason
+   `rejected: ...`), reported separately from failures.
+
+**Known model 2.1 limitation found by the evaluation.** Model 2.1 can deadlock through
+hold-and-wait. The admission rule keeps *carriers* off another task's work cell but not helpers
+working from an adjacent cell. A picking robot beside its task's shelf can therefore occupy another
+task's work cell. That task's loaded AGV waits for the cell, and the waiting crews block the aisle
+the first task needs. This happened in 2 of 1,480 runs, both under PLB
+(`validation/orders/known_gridlock.py`). A fix would change trajectories, so it belongs in a model
+version change, not in this branch.
 
 ## 8. Phases
 
 1. **Done.** Entities, inventory, operations, extended lifecycle, failure detection and retries,
    order metrics. Tests `tests/test_orders.py`; milestone `validation/orders/phase1.py` (inbound,
    outbound, relocation, dependencies, failure recovery; 8 gates; seeds 0–9 pass); identity check.
-2. Scheduler pipeline, nine rules (+ WSP-eq), decision log: hand-built tests per rule.
-3. Metrics (four levels, censoring, bottleneck decomposition): synthetic traces with known answers.
-4. Offline replay dashboard.
-5. Evaluation harness and a first paired comparison on order scenarios.
+2. **Done.** Scheduler pipeline, nine rules + WSP-eq, decision log (`tests/test_scheduling.py`:
+   hand-built case per rule, common candidate set, identical arrivals across rules).
+3. **Done.** Metrics on five levels, censoring, bottleneck decomposition, diagnosis (synthetic trace
+   with known answers; reconstruction of the inventory from the event log).
+4. **Done.** Trace recorder and offline replay dashboard; compact kanban demo GIF.
+5. **Done.** Evaluation harness; exploratory, confirmatory and scalability experiments (results in
+   `experiments/orders/RESULTS.md`).
 
 Publication: develop on `feat/orders-scheduling`; release as 2.2.0 only after validation; RA-L code
 stays in RendeCoord.

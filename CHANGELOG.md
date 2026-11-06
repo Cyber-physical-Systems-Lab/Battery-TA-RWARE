@@ -2,6 +2,46 @@
 
 ## Unreleased (development: role alternatives; package tracking; order layer)
 
+- **Order scheduling, metrics, dashboard and evaluation** (Phases 2–5; `battery_tarware.orders`,
+  `experiments/orders/`).
+  - `OrderScheduler(rule)`: one pipeline for every rule.
+    - Steps: shared charging rule; eligible set; feasibility through `feasible_coalitions` with the
+      common 15% reserve, with rejection reasons; ranking; atomic commits.
+    - Rules: FIFO, EDD, LWF, WSP (0.45/0.30/0.25; type scores 0.8/0.6/0.4), the WSP_eq ablation,
+      SPT, CR, NSP, ZLP_2D (rack-block zones; 0.8 affinity + 0.2 priority) and PLB
+      (0.4(1−C) + 0.3B + 0.3(1−L) over whole coalitions; current information only).
+    - A `schedule_decision` event per tick.
+  - The order generator draws a fixed number of random numbers per order, so the arrival process is
+    identical for all rules on a seed.
+  - `TraceRecorder`: per-tick robot frames and activities, and per-tick cause attribution for every
+    waiting task.
+  - `evaluate`: order, scheduling, robot, coalition and system metrics (see `docs/metrics.md`), and
+    a diagnosis of every unsuccessful order with an evidence span.
+  - `replay_inventory` rebuilds the package ledger from the event log.
+  - `write_dashboard`: an offline, self-contained HTML replay.
+    - Panels: map, kanban, order queue, dependency graph, decisions, robots, packages, charts, cause
+      timeline, metrics, diagnosis, events.
+    - Filters, CSV/JSON export and deep links.
+  - `docs/img/orders_kanban.gif` (1.9 MB) and `docs/img/dashboard.png`.
+  - `evaluation`: parallel run grid (errors kept as rows) and paired bootstrap CIs.
+  - Experiments: exploratory one factor at a time; confirmatory with a pre-registered protocol
+    (`76193bd`) on fresh seeds; scalability. Results are in `experiments/orders/RESULTS.md`.
+  - Examples: `examples/orders.yaml`, `examples/orders_quickstart.py`.
+  - Fix (`725582f`): a relocation whose shelf is away now waits instead of raising `TypeError`.
+  - Results (`experiments/orders/RESULTS.md`): 7 of 9 pre-registered hypotheses are supported.
+    - NSP beats FIFO on throughput and lead time at base load, with heavy coalitions and with tight
+      batteries, and beats PLB. LWF is slower than FIFO. NSP and FIFO are equivalent when
+      demand-limited.
+    - Not supported: PLB > FIFO (one gridlocked seed), and WSP type weights > the equal-type
+      ablation.
+  - Known limitation: model 2.1 can deadlock through hold-and-wait.
+    - A picking robot working from a cell next to its own task's shelf can stand on another task's
+      work cell. That task's loaded AGV then waits for the cell, and the waiting crews block the
+      aisle the first task needs.
+    - This happened in 2 of 1,480 evaluation runs, both under PLB.
+    - The stall detector reports it, and the diagnosis names it.
+    - Reproduce: `validation/orders/known_gridlock.py`. Model 2.1 is not changed.
+
 - **Order layer, Phase 1** (`battery_tarware.orders`; opt-in through the new `orders:` scenario
   key). Design and confirmed decisions: `docs/design/orders_and_scheduling.md`.
   - Entities with persistent ids: orders, task groups, order-layer tasks (persist across dispatch

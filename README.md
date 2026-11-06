@@ -41,6 +41,7 @@ configured:
 - [Built-in scenarios](#built-in-scenarios)
 - [Interfaces](#interfaces)
 - [Baselines](#baselines)
+- [Orders, scheduling and evaluation](#orders-scheduling-and-evaluation)
 - [Citing, licence and acknowledgements](#citing-licence-and-acknowledgements)
 
 # Environment description
@@ -571,6 +572,95 @@ rank the tiers: advanced completing more tasks than basic does not make it easie
 demand-limited; its Poisson arrivals, not the fleet, cap throughput.
 
 On one CPU core the simulator runs about 400–1100 ticks per second with the greedy baseline.
+
+## Orders, scheduling and evaluation
+
+> In development on branch `feat/orders-scheduling` (not in a release yet). Everything is opt-in:
+> a scenario without an `orders:` key runs tick for tick as before.
+
+<p align="center">
+  <img src="docs/img/orders_kanban.gif" width="820" alt="Warehouse map beside an order-task kanban: cards move from blocked and ready through assigned and executing to completed">
+</p>
+
+With an `orders:` block, work arrives as **orders** (inbound, outbound, relocation; several lines;
+dependencies between their tasks) over a persistent **inventory** of packages on shelves at rack
+locations. Package ids persist across operations. Tasks are released to the simulator only when their
+dependencies, inventory and access conditions hold. A task can be suspended, failed and retried, and
+an order can be cancelled; every such transition has a recorded reason.
+
+```python
+from battery_tarware.orders import order_scenario, run_episode, write_dashboard
+res = run_episode(order_scenario(), rule="plb", seed=0, max_steps=2000)
+print(res["metrics"]["primary"])                 # throughput, lead time, on-time rate, energy/order, ...
+write_dashboard([res["trace"]], "dashboard.html")  # offline replay, open in a browser
+```
+
+or `python examples/orders_quickstart.py examples/orders.yaml fifo` (a scripted trace with inbound,
+outbound, relocation and a three-task dependent order).
+
+**Scheduling.** `OrderScheduler(rule)` runs one pipeline for every rule: the shared charging rule;
+the eligible set; feasible coalitions from the simulator (capabilities, role alternatives, payload,
+reachability, 15% battery reserve), with a reason for each infeasible task; then ranking and atomic
+commits. Rules differ only in the ranking:
+
+| Rule | Ranks | Key |
+|---|---|---|
+| `fifo` / `edd` / `lwf` | tasks | order arrival / due date / longest wait since the task last became open |
+| `wsp` (`wsp_eq`) | tasks | 0.45·priority + 0.30·min(wait/100, 1) + 0.25·type score (outbound 0.8, inbound 0.6, relocation 0.4; `wsp_eq`: equal type scores) |
+| `spt` / `cr` | tasks | remaining processing estimate / (due − now) ÷ processing estimate |
+| `nsp` | pairs | crew arrival time |
+| `zlp_2d` | pairs | 0.8·zone affinity (rack-block zones; 1.0 / 0.7 / 0.3) + 0.2·priority |
+| `plb` | pairs | 0.4·(1 − path conflict) + 0.3·workload balance + 0.3·(1 − crew path length) |
+
+Every tick writes a `schedule_decision` event: the candidates, their scores, the feasible coalitions,
+and each task's outcome or rejection reason.
+
+**Metrics and diagnosis.** `TraceRecorder` adds per-tick robot frames and a cause per waiting task
+(sequencing, coalition unavailable, charging contention, congestion, dependency, ...) to the event
+log. `evaluate(trace)` reports order, scheduling, robot, coalition and system metrics, censoring
+unfinished work, and diagnoses each unsuccessful order with an evidence span
+([docs/metrics.md](docs/metrics.md)).
+
+**Dashboard.** `write_dashboard(traces, path)` (or `python -m battery_tarware.orders.dashboard
+trace.json -o dashboard.html`) writes one self-contained HTML file. It offers playback, the map,
+an order-task kanban, the order queue, the dependency graph, scheduler decisions, robots, packages,
+battery and backlog charts, a cause timeline, metrics, and diagnosis with jump-to-evidence. You can
+filter by run, order, package, task, robot, coalition or event, and export CSV or JSON. A deep link
+such as `#run=1&t=300&order=O00012` opens a given view.
+
+<p align="center"><img src="docs/img/dashboard.png" width="760" alt="Replay dashboard: map, selected order, order-task kanban"></p>
+
+**Evaluation.** The experiments live in `experiments/orders/`:
+- `exploratory.py`: one factor at a time (arrival rate, task mix, coalition size, fleet
+  heterogeneity, battery and docks, layout), paired seeds and bootstrap CIs;
+- `confirmatory.py`: a pre-registered protocol on fresh seeds;
+- `scalability.py`.
+
+Results and commands are in [experiments/orders/RESULTS.md](experiments/orders/RESULTS.md). The
+pre-registered confirmatory run (20 fresh seeds, Bonferroni-corrected CIs) supports 7 of 9
+hypotheses in the basic-warehouse family:
+- NSP raises throughput over FIFO at base load (+7.9 orders per 1,000 ticks; FIFO 79.9), with
+  larger coalitions (+17.1) and with tight batteries (+9.4).
+- NSP cuts mean lead time from 186 to 93 ticks at base load.
+- LWF is slower than FIFO.
+- When demand-limited, NSP and FIFO are equivalent.
+- PLB did not beat FIFO: on one seed it drove the fleet into a model 2.1 gridlock (see the known
+  limitations below).
+- WSP's operation-type weights did not measurably shorten lead time against the equal-type
+  ablation.
+
+These are results for this simulator and these scenarios, not general claims about the rules.
+
+**Known limitation (model 2.1).** Model 2.1 can deadlock through hold-and-wait. A picking robot
+working from a cell next to its own task's shelf may stand on another task's work cell. That
+task's loaded AGV then waits for the cell, and the waiting crews block the aisle the first task
+still needs. This happened in 2 of 1,480 evaluation runs, both under PLB. The stall detector
+reports it, and the diagnosis names it "navigation deadlock". Reproduce it with
+`python validation/orders/known_gridlock.py`. Model 2.1 is frozen, so this is documented here rather
+than changed.
+
+The design and its modelling assumptions are in
+[docs/design/orders_and_scheduling.md](docs/design/orders_and_scheduling.md).
 
 ## Citing, licence and acknowledgements
 
