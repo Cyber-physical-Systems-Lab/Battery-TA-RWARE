@@ -83,19 +83,32 @@ class PIBT:
         if key not in self._wdist:
             if len(self._wdist) > 4096:
                 self._wdist.clear()
-            pas = self.sim.passable(u.zones).copy()
+            pas = self.passable(u.zones).copy()
             for c in walls:
                 pas[c] = False
             self._wdist[key] = reverse_distances(self.sim.layout, pas, u.goal)
         d = self._wdist[key]
         return d if d[u.cell] != INF else static          # no way around: wait as in model 2.0
 
+    def passable(self, zones: Tuple[str, ...]) -> np.ndarray:
+        """Cells a unit may route through. Model 2.1: docks are destinations only (a unit enters a
+        dock only as its goal), so no robot is routed or pushed through, or into, a dock bay."""
+        pas = self.sim.passable(zones)
+        cfg = getattr(self.sim, "config", None)
+        if cfg is None or cfg.model == "2.0" or "dock" not in self.sim.layout.zones:
+            return pas
+        key = ("route",) + tuple(zones)
+        cache = self.__dict__.setdefault("_route_pas", {})
+        if key not in cache:
+            cache[key] = pas & ~self.sim.layout.passable_mask(("dock",))
+        return cache[key]
+
     def distances(self, zones: Tuple[str, ...], goal: Cell) -> np.ndarray:
         key = (zones, goal)
         if key not in self._dist:
             if len(self._dist) > 4096:
                 self._dist.clear()
-            self._dist[key] = reverse_distances(self.sim.layout, self.sim.passable(zones), goal)
+            self._dist[key] = reverse_distances(self.sim.layout, self.passable(zones), goal)
         return self._dist[key]
 
     def step(self, units: List[Unit]) -> None:
@@ -124,7 +137,7 @@ class PIBT:
 
     def _candidates(self, u: Unit) -> List[Cell]:
         sim = self.sim
-        pas = sim.passable(u.zones)
+        pas = self.passable(u.zones)
         if u.goal is None:
             out = [(0, 0, -1, u.cell)]
             for k, (dy, dx) in enumerate(MOVES):
@@ -148,7 +161,7 @@ class PIBT:
     def _dead_end(self, w: Unit, exit_cell: Cell) -> bool:
         """``w`` can only leave its cell through ``exit_cell`` (e.g. a loaded AGV in a storage bay)."""
         sim = self.sim
-        pas = sim.passable(w.zones)
+        pas = self.passable(w.zones)
         for k, (dy, dx) in enumerate(MOVES):
             c = (w.cell[0] + dy, w.cell[1] + dx)
             if c != exit_cell and sim.layout.in_bounds(c) and (pas[c] or c == w.goal) \

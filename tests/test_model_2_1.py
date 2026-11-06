@@ -89,18 +89,18 @@ Z = ("aisle", "goal", "dock")
 
 @pytest.mark.parametrize("model,moves", [("2.0", False), ("2.1", True)])
 def test_detour_around_charging_robot(model, moves):
-    # row 0 is a dock row used as a corridor; a robot charges at (0, 2); the mover at (0, 3) wants (0, 0)
-    sim = _Sim("C.C..\n....G", model)
+    # row 0 is a corridor to the dock at (0, 0); a broken-down robot sits at (0, 2); the mover at (0, 3) wants the dock
+    sim = _Sim("C....\n....G", model)
     charging = Unit(0, [], (0, 2), None, Z, None, True, 0, lasting=True)
     mover = Unit(1, [], (0, 3), (0, 0), Z, None, False, 0)
     PIBT(sim).step([charging, mover])
     assert (mover.next != mover.cell) is moves
     if moves:
-        assert mover.next == (1, 3)                 # steps round the charging robot
+        assert mover.next == (1, 3)                 # steps round the broken-down robot
 
 
 def test_short_lived_obstacle_is_waited_for():
-    sim = _Sim("C.C..\n....G", "2.1")
+    sim = _Sim("C....\n....G", "2.1")
     working = Unit(0, [], (0, 2), None, Z, None, True, 0, lasting=False)
     mover = Unit(1, [], (0, 3), (0, 0), Z, None, False, 0)
     PIBT(sim).step([working, mover])
@@ -108,7 +108,7 @@ def test_short_lived_obstacle_is_waited_for():
 
 
 def test_no_way_around_falls_back_to_waiting():
-    sim = _Sim("C.C.G", "2.1")                      # a single row: nowhere to go round
+    sim = _Sim("C...G", "2.1")                      # a single row: nowhere to go round
     charging = Unit(0, [], (0, 2), None, Z, None, True, 0, lasting=True)
     mover = Unit(1, [], (0, 3), (0, 0), Z, None, False, 0)
     PIBT(sim).step([charging, mover])
@@ -143,3 +143,16 @@ def test_unknown_model_and_layout_rejected():
 
 def test_default_model_is_2_1():
     assert ScenarioConfig.from_dict(tiny_dict()).model == "2.1"
+
+
+def test_docks_are_destinations_only_in_2_1():
+    # an idle robot pushed out of the way must not be pushed into a dock bay
+    sim = _Sim("#C#\n...\n..G", "2.1")
+    idle = Unit(0, [], (1, 1), None, Z, None, False, 0)
+    mover = Unit(1, [], (2, 1), (0, 1), Z, None, False, 5)      # heading for the dock through (1, 1)
+    PIBT(sim).step([idle, mover])
+    assert idle.next != (0, 1)
+    sim20 = _Sim("#C#\n...\n..G", "2.0")
+    idle, mover = Unit(0, [], (1, 1), None, Z, None, False, 0), Unit(1, [], (2, 1), (0, 1), Z, None, False, 5)
+    PIBT(sim20).step([idle, mover])
+    assert idle.next is not None
