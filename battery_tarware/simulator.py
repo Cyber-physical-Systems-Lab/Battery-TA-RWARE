@@ -698,11 +698,35 @@ class Simulator:
     def _queue_if_taken(self, r: Robot, t: Task, cell: Cell, zones) -> Cell:
         """Head for ``cell``, unless a robot of another task holds it: then wait at a wide cell
         nearby (a station queue), so robots bound for a busy cell do not clog its approaches."""
+        v21 = self.config.model != "2.0"
         if r.cell == cell:
+            # model 2.1: a robot holding a shared work cell while its own crew is incomplete gives
+            # it up to another task whose crew is complete (no hold-and-wait on shared cells)
+            if v21 and not self._crew_assigned(t) and self._cell_wanted(t, cell, complete=True):
+                return self._staging_cell(r, cell, zones)
             return cell
         if any(o.cell == cell and o.task_id != t.id and self._stationed(o) for o in self.robots):
             return self._staging_cell(r, cell, zones)
+        if v21 and not self._crew_assigned(t) and self._cell_wanted(t, cell, complete=False):
+            # model 2.1 admission: do not occupy a stage cell another task also needs until this
+            # stage's crew is complete
+            return self._staging_cell(r, cell, zones)
         return cell
+
+    def _cell_wanted(self, t: Task, cell: Cell, complete: bool) -> bool:
+        """Does another open, staffed task need ``cell`` for its current stage (with a complete crew
+        for that stage, if ``complete``)?"""
+        for u in self.tasks.values():
+            if u.id != t.id and not u.done and u.robots() and u.stage < len(u.stage_cells) \
+                    and u.stage_cells[u.stage] == cell and (not complete or self._crew_assigned(u)):
+                return True
+        return False
+
+    def _crew_assigned(self, t: Task) -> bool:
+        """Every role of the task's current stage has its full count of robots assigned."""
+        if t.stage >= len(t.type.stages):
+            return True
+        return all(len(t.assigned[role]) >= t.type.role(role).count for role in t.stage_spec.roles)
 
     def _stationed(self, o: Robot) -> bool:
         """Is ``o`` staying where it is (as opposed to passing through)?"""
