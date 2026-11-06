@@ -220,3 +220,4 @@ __pycache__/
 # Battery-TA-RWARE v2: the test suite is kept out of the published repository
 /tests/
 validation/model_2_1/out/
+experiments/orders/results/

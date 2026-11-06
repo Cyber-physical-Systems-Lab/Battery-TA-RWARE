@@ -1,0 +1,163 @@
+# Battery-TA-RWARE: a scenario driven by orders (inbound, outbound, relocation) instead of task
+# demand streams. Run it:   python examples/orders_quickstart.py examples/orders.yaml fifo
+# The `orders:` block is documented in battery_tarware/orders/spec.py and docs/design/orders_and_scheduling.md.
+# Initial inventory: shelves on L0000, L0001, L0002, L0010 (empty) and L0020; one 4 kg package on every
+# other shelf (P00000 on S0000 at L0000, P00001 on S0001, P00002 on S0002, P00003 on S0004).
+name: orders_example
+description: basic warehouse driven by inbound / outbound / relocation orders
+map:
+  generator: {rack_rows: 2, rack_cols: 3, rack_height: 4, goals: 2, docks: 4}
+robot_types:
+- name: agv
+  capabilities: [transport]
+  speed: 1.0
+  payload_kg: 25.0
+  zones: [aisle, storage, goal, dock]
+  zones_loaded: [aisle, goal, dock]
+  energy: {capacity_wh: 1843.0, idle_w: 20.0, move_w: 142.0, payload_w_per_kg: 1.7, handling_w: 60.0, max_charge_w: 1500.0}
+- name: picking_robot
+  capabilities: [pick]
+  speed: 1.0
+  payload_kg: 0.0
+  zones: [aisle, goal, dock]
+  energy: {capacity_wh: 1000.0, idle_w: 15.0, move_w: 90.0, payload_w_per_kg: 0.0, handling_w: 80.0, max_charge_w: 1000.0}
+fleet:
+- type: agv
+  count: 6
+  initial_soc: [0.5, 1.0]
+- type: picking_robot
+  count: 3
+  initial_soc: [0.5, 1.0]
+charger_types:
+- {name: standard, power_w: 1000.0}
+task_types:
+- name: solo
+  roles:
+  - {name: carrier, capability: transport, presence: on_cell}
+  carrier_role: carrier
+  weight: {kind: normal, mean: 2.5, std: 1.0, low: 0.5, high: 6.0}
+  stages:
+  - name: pick
+    at: origin
+    roles: &id001 [carrier]
+    duration: 3
+  - name: deliver
+    at: destination
+    roles: [carrier]
+    duration: 2
+  - name: return
+    at: origin
+    roles: *id001
+    duration: 3
+- name: standard
+  roles:
+  - {name: carrier, capability: transport, presence: on_cell}
+  - {name: picker, capability: pick, count: 1, presence: on_cell}
+  carrier_role: carrier
+  weight: {kind: normal, mean: 5.0, std: 2.0, low: 0.5, high: 12.0}
+  stages:
+  - name: pick
+    at: origin
+    roles: &id002 [carrier, picker]
+    duration: 3
+  - name: deliver
+    at: destination
+    roles: [carrier]
+    duration: 2
+  - name: return
+    at: origin
+    roles: *id002
+    duration: 3
+- name: large
+  roles:
+  - {name: carrier, capability: transport, presence: on_cell}
+  - {name: picker, capability: pick, count: 1, presence: on_cell}
+  - {name: picker_2, capability: pick, count: 1, presence: adjacent}
+  carrier_role: carrier
+  weight: {kind: normal, mean: 8.75, std: 2.0, low: 2.0, high: 20.0}
+  stages:
+  - name: pick
+    at: origin
+    roles: [carrier, picker, picker_2]
+    duration: 3
+  - name: deliver
+    at: destination
+    roles: [carrier]
+    duration: 2
+  - name: return
+    at: origin
+    roles: [carrier, picker, picker_2]
+    duration: 3
+- name: relocate
+  carrier_role: carrier
+  origin: storage
+  destination: storage
+  roles:
+  - {name: carrier, capability: transport, presence: on_cell}
+  weight: {kind: fixed, value: 0.0}
+  stages:
+  - name: lift
+    at: origin
+    roles: [carrier]
+    duration: 2
+  - name: place
+    at: destination
+    roles: [carrier]
+    duration: 2
+demand: []
+max_steps: 1000
+orders:
+  operations:
+    outbound:
+      task_types: &id003
+      - {max_kg: 6.0, task_type: solo}
+      - {max_kg: 12.0, task_type: standard}
+      - {task_type: large}
+      station: goal
+    inbound:
+      task_types: *id003
+      station: goal
+    relocation:
+      task_types:
+      - {task_type: relocate}
+  inventory:
+    shelf_fill: 0.85
+    package_fill: 0.6
+    slot_capacity: 1
+    package_weight: 4.0
+    initial: {L0000: 1, L0001: 1, L0002: 1, L0010: 0, L0020: 1}
+  source:
+    kind: trace
+    orders:
+    - arrival: 0
+      op: outbound
+      packages: [P00000, P00001]
+      priority: 2
+      due: 400
+    - arrival: 0
+      op: inbound
+      packages:
+      - {weight_kg: 3.0}
+      - {weight_kg: 9.0}
+    - arrival: 20
+      kind: outbound
+      tasks:
+      - {key: move, op: relocation, shelf: S0002, to: L0005}
+      - key: ship
+        op: outbound
+        package: P00002
+        depends_on: [move]
+    - arrival: 60
+      kind: mixed
+      tasks:
+      - {key: in, op: inbound, weight_kg: 2.5}
+      - key: mv
+        op: relocation
+        shelf: '@in'
+        to: L0012
+        depends_on: [in]
+      - key: out
+        op: outbound
+        package: '@in'
+        depends_on: [mv]
+  lifecycle: {stall_ticks: 100, max_dispatch_retries: 3, retry_delay: 10, auto_retry: false}
