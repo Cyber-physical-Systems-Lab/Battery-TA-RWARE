@@ -1,0 +1,36 @@
+{
+  "title": "Confirmatory order-scheduling comparison (pre-registered 2026-11-07, after the exploratory calibration pass at c663e36)",
+  "basis": "Hypotheses chosen from the exploratory one-factor-at-a-time pass (seeds 0-9). Tested here on fresh seeds 1000-1019 that were never run before.",
+  "ticks": 3000,
+  "warmup": 300,
+  "seeds": [1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019],
+  "ci_level": 0.99444,
+  "ci_note": "percentile bootstrap over seeds (10000 resamples) of paired differences; Bonferroni 1 - 0.05/9",
+  "configs": {
+    "base": {},
+    "weight=heavy": {"weight": "heavy"},
+    "battery=tight": {"battery": "tight"},
+    "rate=0.05": {"rate": 0.05}
+  },
+  "rules": ["fifo", "nsp", "plb", "wsp", "wsp_eq", "lwf"],
+  "hypotheses": [
+    {"id": "H1", "config": "base", "rule": "nsp", "reference": "fifo", "metric": "throughput", "direction": "higher",
+     "statement": "base: NSP completes more orders per 1000 ticks than FIFO"},
+    {"id": "H2", "config": "base", "rule": "nsp", "reference": "fifo", "metric": "lead_time_mean", "direction": "lower",
+     "statement": "base: NSP has a shorter mean order lead time than FIFO"},
+    {"id": "H3", "config": "base", "rule": "plb", "reference": "fifo", "metric": "throughput", "direction": "higher",
+     "statement": "base: PLB completes more orders per 1000 ticks than FIFO"},
+    {"id": "H4", "config": "base", "rule": "nsp", "reference": "plb", "metric": "throughput", "direction": "higher",
+     "statement": "base: NSP completes more orders per 1000 ticks than PLB"},
+    {"id": "H5", "config": "weight=heavy", "rule": "nsp", "reference": "fifo", "metric": "throughput", "direction": "higher",
+     "statement": "heavier packages (larger coalitions): NSP completes more orders than FIFO"},
+    {"id": "H6", "config": "battery=tight", "rule": "nsp", "reference": "fifo", "metric": "throughput", "direction": "higher",
+     "statement": "tight batteries and 2 docks: NSP completes more orders than FIFO"},
+    {"id": "H7", "config": "base", "rule": "wsp", "reference": "wsp_eq", "metric": "lead_time_mean", "direction": "lower",
+     "statement": "base: WSP's operation-type weights shorten mean lead time against the equal-type ablation"},
+    {"id": "H8", "config": "base", "rule": "lwf", "reference": "fifo", "metric": "lead_time_mean", "direction": "higher",
+     "statement": "base: LWF has a longer mean lead time than FIFO"},
+    {"id": "H9", "config": "rate=0.05", "rule": "nsp", "reference": "fifo", "metric": "throughput", "direction": "equivalent", "margin": 2.0,
+     "statement": "demand-limited (0.05 orders/tick): NSP and FIFO throughput are equivalent within +-2 orders/1000 ticks"}
+  ]
+}

@@ -115,7 +115,8 @@ def bootstrap_ci(d: np.ndarray, n_boot: int = 10000, seed: int = 0, level: float
     return float(np.quantile(means, a)), float(np.quantile(means, 1 - a))
 
 
-def paired(rows: List[Dict], ref: str = "fifo", metrics: Sequence[str] = PRIMARY, n_boot: int = 10000) -> List[Dict]:
+def paired(rows: List[Dict], ref: str = "fifo", metrics: Sequence[str] = PRIMARY, n_boot: int = 10000,
+           level: float = 0.95) -> List[Dict]:
     ok = [r for r in rows if not r.get("error")]
     configs = list(dict.fromkeys(r["config"] for r in ok))
     rules = list(dict.fromkeys(r["rule"] for r in ok))
@@ -133,7 +134,7 @@ def paired(rows: List[Dict], ref: str = "fifo", metrics: Sequence[str] = PRIMARY
                 a = np.array([p[0] for p in pairs], float)
                 b = np.array([p[1] for p in pairs], float)
                 d = b - a
-                lo, hi = bootstrap_ci(d, n_boot) if rule != ref and len(d) > 1 else (0.0, 0.0)
+                lo, hi = bootstrap_ci(d, n_boot, level=level) if rule != ref and len(d) > 1 else (0.0, 0.0)
                 out.append({"config": c, "rule": rule, "metric": m, "n": len(d), "ref_mean": float(a.mean()),
                             "rule_mean": float(b.mean()), "diff": float(d.mean()), "ci_lo": lo, "ci_hi": hi,
                             "rule_better": int(sum(_better(m, x) for x in d)), "excludes_zero": bool(lo > 0 or hi < 0)})
