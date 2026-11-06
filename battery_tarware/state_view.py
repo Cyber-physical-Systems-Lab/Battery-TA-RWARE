@@ -58,7 +58,7 @@ class TaskView:
     deadline: Optional[int]
     depends_on: Tuple[int, ...]
     assigned: Tuple[Tuple[str, Tuple[int, ...]], ...]
-    open_roles: Tuple[Tuple[str, str, int], ...]          # (role, capability, open slots)
+    open_roles: Tuple[Tuple[str, str, int], ...]          # (role, capability or "a|b" alternatives, open slots)
     carried: bool
     payload_cell: Optional[Cell]
 
@@ -108,7 +108,8 @@ class StateView:
         }
         for i, t in enumerate(self.tasks):
             for _, cap, n in t.open_roles:
-                a["task_open_capability"][i, caps[cap]] += n
+                for c in cap.split("|"):                       # an alternative slot counts under each capability
+                    a["task_open_capability"][i, caps[c]] += n
         return {k: np.ascontiguousarray(v) for k, v in a.items()}
 
 
@@ -121,7 +122,7 @@ def build_state_view(sim) -> StateView:
         t.id, t.type.name, t.state.value, t.origin, t.destination, t.stage, len(t.type.stages),
         t.stage_cell, t.weight_kg, t.released, t.deadline, t.depends_on,
         tuple((k, tuple(v)) for k, v in t.assigned.items()),
-        tuple((role, t.type.role(role).capability, n) for role, n in t.open_roles().items()),
+        tuple((role, t.type.role(role).capability_key, n) for role, n in t.open_roles().items()),
         t.carried, t.payload_cell) for t in sim.tasks.values() if not t.done)
     chargers = tuple(ChargerView(c.id, c.cell, c.type, c.power_w, c.occupant, c.reserved_by) for c in sim.chargers)
     return StateView(SCHEMA_VERSION, sim.tick, sim.layout.shape, robots, tasks, chargers, tuple(sim.capabilities))

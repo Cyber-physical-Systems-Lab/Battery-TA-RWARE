@@ -232,11 +232,20 @@ ON_CELL_21 = {"basic": {("standard", "picker"), ("large", "picker")},
               "intermediate": {("case", "picker"), ("pallet", "picker")}}
 
 
-def get_scenario(name: str, model: str = "2.1") -> Dict[str, Any]:
+def get_scenario(name: str, model: str = "2.1", substitution: bool = False) -> Dict[str, Any]:
     """A deep copy of a built-in scenario dict (edit it, then pass it to make / from_dict).
-    ``model="2.0"`` returns the scenario exactly as in model 2.0 (pickers work from the next cell)."""
+    ``model="2.0"`` returns the scenario exactly as in model 2.0 (pickers work from the next cell).
+
+    ``substitution=True`` (intermediate, model 2.1 only): the support role of a ``case`` task may be
+    filled either by a picking robot on the shelf cell (as before) or by a tote AGV with the
+    ``load_assist`` capability working from the next cell (radius 1). Only ``tote_agv`` gets
+    ``load_assist``; task demand, crew size, stage durations and every other task type are unchanged.
+    ``load_assist`` is an abstract benchmark capability (a support operation done from beside the
+    shelf), not a validated physical loading behaviour."""
     if name not in SCENARIOS:
         raise ConfigError("unknown scenario %r; built-in: %s" % (name, sorted(SCENARIOS)))
+    if substitution and (name != "intermediate" or model == "2.0"):
+        raise ConfigError("substitution=True is defined for the intermediate scenario under model 2.1 only")
     d = copy.deepcopy(SCENARIOS[name])
     if model == "2.0":
         d["model"] = "2.0"
@@ -259,6 +268,19 @@ def get_scenario(name: str, model: str = "2.1") -> Dict[str, Any]:
                     if role["name"] in st["roles"]:
                         st["roles"] = list(st["roles"]) + [extra["name"]]
         tt["roles"] = roles
+    if substitution:
+        d["name"] = "intermediate (substitutable support)"
+        for rt in d["robot_types"]:
+            if rt["name"] == "tote_agv":
+                rt["capabilities"] = list(rt["capabilities"]) + ["load_assist"]
+        for tt in d["task_types"]:
+            if tt["name"] != "case":
+                continue
+            for i, role in enumerate(tt["roles"]):
+                if role["name"] == "picker":
+                    tt["roles"][i] = {"name": "picker", "count": role.get("count", 1), "alternatives": [
+                        {"capability": "pick", "presence": "on_cell"},
+                        {"capability": "load_assist", "presence": "adjacent", "radius": 1}]}
     return d
 
 

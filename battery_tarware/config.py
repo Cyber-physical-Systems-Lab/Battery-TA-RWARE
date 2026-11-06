@@ -153,23 +153,89 @@ class ChargerTypeSpec:
 # ───────────────────────────────────────────────────────────── tasks
 
 @dataclass(frozen=True)
+class RoleOption:
+    """One way to fill a role: robots with ``capability`` working at ``presence`` (``on_cell``: the
+    stage cell itself; ``adjacent``: within ``radius``, Chebyshev)."""
+    capability: str
+    presence: str = "adjacent"
+    radius: int = 1
+
+    def validate(self, where: str) -> None:
+        _check(isinstance(self.capability, str) and self.capability and "|" not in self.capability,
+               "%s: capability must be a non-empty name without '|'" % where)
+        _check(self.presence in ("on_cell", "adjacent"), "%s: presence must be on_cell|adjacent" % where)
+        _check(self.radius >= 0, "%s: radius must be >= 0" % where)
+
+
+@dataclass(frozen=True)
 class RoleSpec:
     """A slot in a task crew: ``count`` robots with ``capability``. ``presence`` says where they must
     be during a stage: ``on_cell`` (the stage cell itself) or ``adjacent`` (within ``radius``).
     ``stay``: keep the same robots committed between the stages this role takes part in (otherwise
     they are released after a stage and the role is filled again for its next stage). The carrier
-    role always stays: it holds the payload."""
+    role always stays: it holds the payload.
+
+    ``alternatives`` (instead of ``capability``/``presence``/``radius``): several ways to fill the
+    same slot, each a capability with its own work position, e.g. a picking robot on the shelf cell
+    or a load-assisting AGV next to it. A robot fills the role through the first alternative whose
+    capability it has; its work position is that alternative's. The carrier role cannot have
+    alternatives."""
     name: str
-    capability: str
+    capability: Optional[str] = None
     count: int = 1
     presence: str = "adjacent"
     radius: int = 1
     stay: bool = False
+    alternatives: Tuple[RoleOption, ...] = ()
+
+    @staticmethod
+    def from_dict(d: Mapping[str, Any], where: str) -> "RoleSpec":
+        if isinstance(d, RoleSpec):
+            return d
+        _check(isinstance(d, Mapping), "%s: expected a mapping, got %r" % (where, type(d).__name__))
+        d = dict(d)
+        if "alternatives" in d:
+            alts = d["alternatives"]
+            _check(isinstance(alts, (list, tuple)), "%s role %r: alternatives must be a list" % (where, d.get("name")))
+            d["alternatives"] = tuple(_build(RoleOption, a, "%s role %r alternative" % (where, d.get("name")))
+                                      for a in alts)
+        return _build(RoleSpec, d, where)
+
+    @property
+    def options(self) -> Tuple[RoleOption, ...]:
+        return self.alternatives or (RoleOption(self.capability, self.presence, self.radius),)
+
+    @property
+    def capabilities(self) -> Tuple[str, ...]:
+        return tuple(o.capability for o in self.options)
+
+    @property
+    def capability_key(self) -> str:
+        """The capability name, or the alternatives joined by '|'."""
+        return "|".join(self.capabilities)
+
+    def option_for(self, robot) -> Optional[RoleOption]:
+        """The alternative ``robot`` fills this role through (first match), or None."""
+        for o in self.options:
+            if robot.can(o.capability) if hasattr(robot, "can") else o.capability in robot.capabilities:
+                return o
+        return None
+
+    def accepts(self, robot) -> bool:
+        return self.option_for(robot) is not None
 
     def validate(self, where: str) -> None:
         _check(self.count >= 1, "%s role %r: count must be >= 1" % (where, self.name))
-        _check(self.presence in ("on_cell", "adjacent"), "%s role %r: presence must be on_cell|adjacent" % (where, self.name))
-        _check(self.radius >= 0, "%s role %r: radius must be >= 0" % (where, self.name))
+        if self.alternatives:
+            _check(self.capability is None, "%s role %r: give either capability or alternatives, not both"
+                   % (where, self.name))
+            for o in self.alternatives:
+                o.validate("%s role %r alternative" % (where, self.name))
+            caps = self.capabilities
+            _check(len(set(caps)) == len(caps), "%s role %r: duplicate capability in alternatives" % (where, self.name))
+        else:
+            _check(self.capability is not None, "%s role %r: needs a capability (or alternatives)" % (where, self.name))
+            RoleOption(self.capability, self.presence, self.radius).validate("%s role %r" % (where, self.name))
 
 
 @dataclass(frozen=True)
@@ -269,7 +335,7 @@ class TaskTypeSpec:
     def from_dict(d: Mapping[str, Any], where: str = "task_type") -> "TaskTypeSpec":
         d = dict(d)
         w = where + " %r" % d.get("name")
-        d["roles"] = tuple(_build(RoleSpec, r, w + ".roles") for r in d.get("roles", ()))
+        d["roles"] = tuple(RoleSpec.from_dict(r, w + ".roles") for r in d.get("roles", ()))
         stages = []
         for s in d.get("stages", ()):
             s = dict(s)
@@ -305,6 +371,7 @@ class TaskTypeSpec:
         _check(self.weight.kind != "fixed" or self.weight.value >= 0, "%s: weight must be >= 0" % w)
         if self.carrier_role is not None:
             _check(self.carrier_role in names, "%s: carrier_role %r is not a role" % (w, self.carrier_role))
+            _check(not self.role(self.carrier_role).alternatives, "%s: the carrier role cannot have alternatives" % w)
             for s in self.stages:
                 _check(self.carrier_role in s.roles,
                        "%s: the carrier role must take part in every stage (it holds the payload)" % w)
@@ -571,8 +638,9 @@ class ScenarioConfig:
                     caps.append(c)
         for t in self.task_types:
             for role in t.roles:
-                if role.capability not in caps:
-                    caps.append(role.capability)
+                for c in role.capabilities:
+                    if c not in caps:
+                        caps.append(c)
         return tuple(caps)
 
     def resolved_robot_specs(self):
@@ -627,9 +695,9 @@ class ScenarioConfig:
         for t in self.task_types:
             t.validate(zones)
             for role in t.roles:
-                capable = [s for s in specs if role.capability in s.capabilities]
+                capable = [s for s in specs if set(role.capabilities) & set(s.capabilities)]
                 _check(len(capable) >= role.count, "task type %r: role %r needs %d robot(s) with %r, fleet has %d"
-                       % (t.name, role.name, role.count, role.capability, len(capable)))
+                       % (t.name, role.name, role.count, role.capability_key, len(capable)))
             if t.carrier_role is not None:
                 role = t.role(t.carrier_role)
                 caps = sorted((s.payload_kg for s in specs if role.capability in s.capabilities), reverse=True)

@@ -52,7 +52,8 @@ class Task:
     def required(self) -> Dict[str, int]:
         req: Dict[str, int] = {}
         for r in self.type.roles:
-            req[r.capability] = req.get(r.capability, 0) + r.count
+            for c in r.capabilities:                    # an alternative slot counts under each capability
+                req[c] = req.get(c, 0) + r.count
         return req
 
     def robots(self) -> List[int]:

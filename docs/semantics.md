@@ -169,6 +169,12 @@ A cell holds one robot, with exactly these exceptions:
 - **Separation.** Robots that shared a cell under the two rules above stay together after their task
   releases them only until they drive apart. In the validated scenarios this takes at most 10 ticks.
 
+- **Role alternatives.** The position comes from the alternative a robot fills its role through,
+  not from the role. For example, in `get_scenario("intermediate", substitution=True)` the `case`
+  support slot is filled either by a picking robot on the shelf cell (it shares the cell with the
+  carrier, as above) or by a tote AGV with `load_assist` from a neighbouring cell. A robot filling a
+  role through an `adjacent` alternative never targets or works on the stage cell itself.
+
 Occupancy compatibility is not coalition membership. Being assigned to the same task does not let a
 robot share every cell with its partners: only the cell where the active stage needs them together.
 Robots of unrelated tasks never share a cell.

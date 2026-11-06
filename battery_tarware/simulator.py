@@ -328,14 +328,14 @@ class Simulator:
                 rs = t.type.role(name)
             except KeyError:
                 return False, "unknown role %r" % name
-            if len(t.assigned[name]) >= rs.count or not r.can(rs.capability):
+            if len(t.assigned[name]) >= rs.count or not rs.accepts(r):
                 continue
             if name == t.type.carrier_role:
                 if r.spec.payload_kg <= 0:
                     continue
                 cap_now = sum(self.robots[i].spec.payload_kg for i in t.assigned[name])
                 left = rs.count - len(t.assigned[name]) - 1
-                best_other = max([o.spec.payload_kg for o in self.robots if o.can(rs.capability) and o.id != r.id
+                best_other = max([o.spec.payload_kg for o in self.robots if rs.accepts(o) and o.id != r.id
                                   and o.operational] or [0.0])
                 if cap_now + r.spec.payload_kg + left * best_other < t.weight_kg - 1e-9:
                     continue
@@ -630,11 +630,17 @@ class Simulator:
             zs = z if zs is None else zs & z
         return tuple(sorted(zs or ()))
 
+    @staticmethod
+    def _option(r: Robot, t: Task, role: Optional[str] = None):
+        """The role alternative (capability, presence, radius) robot ``r`` fills its role through."""
+        rs = t.type.role(role or r.role)
+        return rs.option_for(r) or rs.options[0]
+
     def _present(self, r: Robot, t: Task, role: str, cell: Cell) -> bool:
-        rs = t.type.role(role)
-        if role == t.type.carrier_role or rs.presence == "on_cell":
+        opt = self._option(r, t, role)
+        if role == t.type.carrier_role or opt.presence == "on_cell":
             return r.cell == cell
-        return self.chebyshev(r.cell, cell) <= rs.radius
+        return self.chebyshev(r.cell, cell) <= opt.radius
 
     def _target(self, r: Robot) -> Optional[Cell]:
         """Where a macro-controlled robot wants to be (None = stay)."""
@@ -652,7 +658,7 @@ class Simulator:
             if s is None:
                 return None
             cell = t.stage_cells[s]
-            rs = t.type.role(r.role)
+            rs = self._option(r, t)
             if rs.presence == "on_cell":
                 return self._queue_if_taken(r, t, cell, r.zones(False))
             if t.type.carrier_role is not None:
@@ -663,9 +669,10 @@ class Simulator:
                 ready = s == t.stage and len(carriers) == need and all(self.robots[i].cell == cell for i in carriers)
                 if not ready:
                     return self._staging_cell(r, cell)
-            if self.chebyshev(r.cell, cell) <= rs.radius:
+            alt = bool(t.type.role(r.role).alternatives)       # an alternative worked from beside the cell
+            if self.chebyshev(r.cell, cell) <= rs.radius and not (alt and r.cell == cell):
                 return r.cell
-            return self._nearest_standing_cell(r, cell, rs.radius)
+            return self._nearest_standing_cell(r, cell, rs.radius, allow_center=not alt)
         if r.status == RobotStatus.IDLE and self.config.model != "2.0":
             return self._parking_target(r)                    # model 2.1: a kept, unshared parking spot
         if r.status == RobotStatus.IDLE and not self._parking(r)[r.cell]:
@@ -769,7 +776,7 @@ class Simulator:
         t = self.tasks[o.task_id]
         if o.role == t.type.carrier_role:
             return o.cell == (t.stage_cell if t.carried else t.payload_cell)
-        return t.type.role(o.role).presence == "on_cell" and o.cell == t.stage_cell
+        return self._option(o, t).presence == "on_cell" and o.cell == t.stage_cell
 
     def _staging_cell(self, r: Robot, near: Cell, zones=None) -> Cell:
         zones = r.zones(False) if zones is None else zones
@@ -833,7 +840,7 @@ class Simulator:
         return sum(1 for dy, dx in MOVES if self.layout.in_bounds((cell[0] + dy, cell[1] + dx))
                    and pas[cell[0] + dy, cell[1] + dx])
 
-    def _nearest_standing_cell(self, r: Robot, center: Cell, radius: int) -> Cell:
+    def _nearest_standing_cell(self, r: Robot, center: Cell, radius: int, allow_center: bool = True) -> Cell:
         """Where a helper stands next to a stage cell: the nearest candidate within ``radius`` that it
         can actually reach with stationed robots treated as obstacles (a teammate standing on a
         crossing must not cut it off), preferring cells that keep the stage cell's access free.
@@ -848,7 +855,7 @@ class Simulator:
         for dy in range(-radius, radius + 1):
             for dx in range(-radius, radius + 1):
                 c = (center[0] + dy, center[1] + dx)
-                if not self.layout.in_bounds(c) or not pas[c] or c in stationed:
+                if not self.layout.in_bounds(c) or not pas[c] or c in stationed or (c == center and not allow_center):
                     continue
                 in_the_way = (dy == 0 and dx == 0) or abs(dy) + abs(dx) == 1
                 cands.append((in_the_way, self.manhattan(r.cell, c), c))
@@ -864,7 +871,7 @@ class Simulator:
         if o.task_id is None:
             return False
         t = self.tasks[o.task_id]
-        rs = t.type.role(o.role)
+        rs = self._option(o, t)
         return (o.role != t.type.carrier_role and rs.presence == "adjacent"
                 and self.chebyshev(o.cell, t.stage_cell) <= rs.radius and o.role in t.stage_spec.roles)
 
@@ -1007,7 +1014,7 @@ class Simulator:
         t = self.tasks[r.task_id]
         if t.type.carrier_role is None or r.role == t.type.carrier_role:
             return None
-        if t.type.role(r.role).presence != "on_cell":
+        if self._option(r, t).presence != "on_cell":
             return None
         s = t.next_stage_for(r.role)
         return None if s is None else t.stage_cells[s]

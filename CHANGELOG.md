@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased (development: role alternatives)
+
+Not part of the 2.1.0 release. Model 2.1 rules are unchanged; configurations without
+`alternatives` (all built-in scenarios by default) run tick for tick as in 2.1.0.
+
+- **Role alternatives.** A task role may list `alternatives: [{capability, presence, radius}, ...]`
+  instead of one `capability`. Any listed capability can fill the slot, and each has its own work
+  position. A robot fills the role through the first alternative it matches and must be present at
+  that alternative's position. The carrier role cannot have alternatives.
+  - The rule applies in configuration validation, joining (`can_join`, action masks), coalition
+    feasibility and estimates, stage execution, standing-cell choice and crew co-location.
+  - Capability-indexed observation features count an alternative slot under each capability that
+    can fill it.
+- **`get_scenario("intermediate", substitution=True)`.** The `case` support role is filled by a
+  picking robot on the shelf cell, or by a tote AGV with the new `load_assist` capability from the
+  next cell (radius 1).
+  - Only `tote_agv` gets `load_assist`.
+  - Demand, fleet, crew size, stage durations and all other task types are unchanged.
+  - Effective handling speed is unchanged: stage progress follows the slowest crew member, here the
+    carrier tote AGV at 1.0.
+  - `load_assist` is an abstract benchmark capability, not a validated physical loading behaviour.
+- **Validation.** `validation/capability_alternatives/regress.py` on the variant, standard and large
+  maps, inline docks and bays, seeds 0-9: PASS.
+  - Under the model 2.1 gate thresholds: no swaps, dock violations, no-progress, oscillation or
+    stranding.
+  - No assisting AGV on the shelf cell or outside radius 1, and no robot in two roles of one task.
+  - Tote AGVs took 30-43% of support stages.
+  - With the variant off, trajectories match 2.1.0 exactly (9 greedy episodes: positions, energy,
+    rewards, observations).
+
 ## 2.1.0 (model 2.1)
 
 Model 2.1 is the new default (`model: "2.1"`). It adds explicit occupancy, docking and waiting rules
