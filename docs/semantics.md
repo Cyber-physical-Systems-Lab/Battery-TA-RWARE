@@ -1,10 +1,15 @@
-# Simulation semantics (model version 2.0)
+# Simulation semantics (model versions 2.0 and 2.1)
 
 This page is part of the public contract of Battery-TA-RWARE. Results obtained with the simulator
 depend on these rules, so **report the package version (and this model version) with every
 result**. A change to any rule below is released as a new minor model version (2.x) and listed in
 [CHANGELOG.md](../CHANGELOG.md). A change that breaks existing configurations or trajectories gets a
 new major version.
+
+**Model 2.1 is the default** (`model: "2.1"`). It keeps every rule on this page and adds the
+operational rules in [Model 2.1](#model-21-occupancy-docking-and-waiting) below. Set `model: "2.0"`
+(and use `get_scenario(name, model="2.0")` for a built-in scenario) to reproduce model 2.0 exactly; this
+is verified tick by tick against release 2.0.0.
 
 Version 2 is a new engine. It is **not trajectory-compatible** with TA-RWARE / Battery-TA-RWARE v1
 (git tag `legacy-v1.1.0`, branch `v1`), or with any study that ran on the v1 kernel. Its movement,
@@ -144,3 +149,74 @@ noise.
 
 For a given package version, the same seed and the same actions reproduce a run exactly. Changing
 one random process (for example the failure rate) does not change the draws of the others.
+
+## Model 2.1: occupancy, docking and waiting
+
+Model 2.1 makes robots wait, move, cooperate and charge for reasons that follow from the task and
+resource rules, instead of from artifacts of the movement implementation. Every rule below applies
+only with `model: "2.1"`.
+
+### Occupancy compatibility
+
+A cell holds one robot, with exactly these exceptions:
+
+- **Joint transport.** The carriers of one task share the payload's cell while they carry it.
+- **Shelf loading and unloading.** A task's carrier and its crew members whose role has
+  `presence: on_cell` may share the cell of the task's current stage (or its payload cell). In the
+  built-in scenarios a picking robot steps onto the shelf cell beside the AGV to load or unload the
+  tote, as in TA-RWARE. One picker works on the shelf cell; a task that needs a second picker
+  (`picker_2`) has it work from a neighbouring cell.
+- **Separation.** Robots that shared a cell under the two rules above stay together after their task
+  releases them only until they drive apart. In the validated scenarios this takes at most 10 ticks.
+
+Occupancy compatibility is not coalition membership. Being assigned to the same task does not let a
+robot share every cell with its partners: only the cell where the active stage needs them together.
+Robots of unrelated tasks never share a cell.
+
+### Docking
+
+- Every dock is **available**, **reserved** (assigned to a robot on its way), **occupied** (a robot
+  charges on it) or **unavailable** (a broken-down or stranded robot that does not hold it stands
+  on it). `Simulator.charger_state(charger)` returns it.
+- `send_to_charger` (and the macro charge action and primitive `interact`) reserves the dock. It is
+  rejected if another robot holds the dock, or if it is unavailable. There is no implicit queue: a
+  robot that gets no dock stays where it is, and the controller decides when to try again.
+- Releasing, a full battery, a breakdown or stranding frees the reservation.
+- Docks are destinations only: robots are never routed through, or pushed into, a dock they are
+  not going to charge at.
+- A robot whose reserved dock is blocked by a stationed robot waits at a staging cell nearby.
+- `map.dock_layout: bays` turns every row of docks into one-cell bays off the corridor (see
+  [configuration](configuration.md#map)).
+
+### Moving around obstacles that stay
+
+Charging, broken-down and stranded robots, and robots standing on their own stage cell for their
+crew or their stage, are long-lived obstacles: other robots route around them (they are walls in
+the distance field used by PIBT). If no way around exists, a robot waits. Short-lived obstacles (a
+robot without enough speed credit) are waited for.
+
+A robot pushed by a higher-priority robot steps aside rather than retreating straight ahead of it
+when both are equally good for it, so slow robots are not driven down corridors.
+
+### Waiting
+
+- **Waiting spots.** A robot that has to wait (for a busy stage cell or dock, or for its carrier)
+  waits on a neutral cell: plain aisle or storage, never a goal, dock or custom-zone cell, and never
+  another task's current stage or payload cell. It keeps the spot it chose while the spot stays free,
+  and no two robots claim the same spot.
+- **Parking.** An idle robot parks on a free wide aisle cell away from goals and work zones, keeps
+  that spot, and does not share it.
+- **Shared work cells.** A robot does not enter a stage cell that another task also needs until its
+  own crew for that stage is fully assigned, and it gives such a cell up to a task whose crew is
+  complete. This prevents hold-and-wait between tasks that share a work cell (for example a
+  quality-check station).
+
+Waiting and parking spots are chosen in the movement phase only; reading a robot's target from
+outside the step (`Simulator._target`) does not change the run.
+
+### Validation
+
+The 2.1 rules were validated against a pre-registered behavioural gate (vertex and swap conflicts,
+dock exclusivity, no persistent no-progress or oscillation, no new stranding, exact reproduction of
+model 2.0) on all built-in scenarios and their large versions, with the outcome and every revision
+recorded in `validation/model_2_1/PREREGISTRATION.md`.

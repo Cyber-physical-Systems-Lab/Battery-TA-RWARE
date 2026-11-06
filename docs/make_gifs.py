@@ -145,18 +145,18 @@ def scale(cfg, k, generator=None, ascii=None, demand=None, initial_soc=None):
     return cfg
 
 
-def large_scenarios():
+def large_scenarios(model="2.1"):
     """The four README animations: every scenario scaled up on the same 4 x 7 rack-block layout."""
     import yaml
     tutorial = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "..", "examples", "tutorial.yaml")))
     return {
         # 3x: 18 AGVs, 9 picking robots; part-charged at the start so the shared docks are contested
-        "basic": scale(bt.get_scenario("basic"), 3, initial_soc=[0.25, 0.6],
+        "basic": scale(bt.get_scenario("basic", model=model), 3, initial_soc=[0.25, 0.6],
                        generator=dict(LARGE_RACKS, goals=7, docks=8)),
         # 2x: 12 tote AGVs, 4 pallet AGVs, 10 picking robots
-        "intermediate": scale(bt.get_scenario("intermediate"), 2, generator=dict(LARGE_RACKS, goals=7, docks=12)),
+        "intermediate": scale(bt.get_scenario("intermediate", model=model), 2, generator=dict(LARGE_RACKS, goals=7, docks=12)),
         # 2x: receiving shelves in the top-left block, quality check in the bottom-left block
-        "advanced": scale(bt.get_scenario("advanced"), 2, demand=1.0,
+        "advanced": scale(bt.get_scenario("advanced", model=model), 2, demand=1.0,
                           ascii=large_map(goals=7, docks=12, first_column={0: "I", 3: "Q"})),
         # 3x: a packing station in the middle of the goal row
         "tutorial": scale(tutorial, 3, demand=2, ascii=large_map(goals=6, docks=10, bottom_zone=("P", 4))),

@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "Battery-TA-RWARE: heterogeneous multi-robot cooperation under battery constraints"
-version: 2.0.0
+version: 2.1.0
 date-released: 2026-11-05
 url: "https://github.com/Cyber-physical-Systems-Lab/Battery-TA-RWARE"
 license: MIT

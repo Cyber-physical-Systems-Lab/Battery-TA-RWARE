@@ -408,15 +408,23 @@ class DemandStream:
 
 # ───────────────────────────────────────────────────────────── map, rewards, observations
 
+DOCK_LAYOUTS = ("inline", "bays")
+MODELS = ("2.0", "2.1")                 # simulation model versions (docs/semantics.md)
+
+
 @dataclass(frozen=True)
 class MapSpec:
     """``ascii`` rows using the legend ``.`` aisle, ``S`` storage, ``G`` goal, ``C`` charger dock,
     ``#`` wall, plus ``zones`` = {symbol: zone name} for custom zones (e.g. receiving, inspection).
     ``ascii`` is one string or a list of row strings.
-    Or a generated layout: ``generator`` = {rack_rows, rack_cols, rack_height, goals, docks}."""
+    Or a generated layout: ``generator`` = {rack_rows, rack_cols, rack_height, goals, docks}.
+    ``dock_layout``: ``inline`` (docks sit in a row robots drive along, as drawn) or ``bays`` (every
+    row made only of docks and aisle has its aisle cells walled off, so each dock is a one-cell bay
+    off the corridor next to it; model 2.1)."""
     ascii: Optional[str] = None
     zones: Mapping[str, str] = field(default_factory=dict)
     generator: Optional[Mapping[str, int]] = None
+    dock_layout: str = "inline"
 
     def __post_init__(self):
         if isinstance(self.ascii, (list, tuple)):
@@ -424,6 +432,7 @@ class MapSpec:
 
     def validate(self) -> None:
         _check((self.ascii is None) != (self.generator is None), "map: give exactly one of ascii, generator")
+        _check(self.dock_layout in DOCK_LAYOUTS, "map: dock_layout must be one of %s" % (DOCK_LAYOUTS,))
         for sym, zone in self.zones.items():
             _check(len(sym) == 1 and sym not in ".SGC#", "map: custom zone symbol %r must be one new character" % sym)
             _check(zone not in CELL_ZONES and zone != "wall", "map: custom zone name %r clashes with a built-in" % zone)
@@ -467,6 +476,7 @@ class ScenarioConfig:
     rewards: RewardSpec = field(default_factory=RewardSpec)
     observation: ObservationSpec = field(default_factory=ObservationSpec)
     description: str = ""
+    model: str = "2.1"                   # simulation model version; "2.0" reproduces model 2.0 exactly
 
     # ---- construction
     @staticmethod
@@ -588,6 +598,7 @@ class ScenarioConfig:
     # ---- validation
     def validate(self) -> None:
         self.map.validate()
+        _check(self.model in MODELS, "model must be one of %s" % (MODELS,))
         zones = self.zones
         _check(len(self.robot_types) > 0, "scenario needs robot_types")
         names = [r.name for r in self.robot_types]
