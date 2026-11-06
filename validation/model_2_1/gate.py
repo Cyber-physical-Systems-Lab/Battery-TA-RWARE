@@ -31,17 +31,22 @@ from battery_tarware.robots import RobotStatus     # noqa: E402
 CONFIGS = {"A": ("2.0", "inline"), "B": ("2.1", "inline"), "C": ("2.0", "bays"), "D": ("2.1", "bays"), "REF": None}
 SCENARIOS = ("basic", "intermediate", "advanced", "basic_large", "intermediate_large", "advanced_large")
 STREAK, OSC = 100, 10                              # L1 and L2 thresholds (frozen)
+SEPARATE = 10      # PROPOSED S1 amendment (not registered; defined before run 6): former partners must part within this many ticks
 PRIMITIVE_TICKS = 500
 
 
 def scenario(name: str, config: str) -> dict:
+    import make_gifs
+    if CONFIGS[config] is None:                    # REF: the base commit's own definitions
+        if name.endswith("_large"):
+            return copy.deepcopy(make_gifs.large_scenarios()[name[:-len("_large")]])
+        return copy.deepcopy(bt.get_scenario(name))
+    model, layout = CONFIGS[config]
     if name.endswith("_large"):
-        import make_gifs
-        cfg = copy.deepcopy(make_gifs.large_scenarios()[name[:-len("_large")]])
+        cfg = copy.deepcopy(make_gifs.large_scenarios(model=model)[name[:-len("_large")]])
     else:
-        cfg = copy.deepcopy(bt.get_scenario(name))
-    if CONFIGS[config] is not None:
-        model, layout = CONFIGS[config]
+        cfg = copy.deepcopy(bt.get_scenario(name, model=model))
+    if True:
         cfg["model"] = model
         cfg["map"] = dict(cfg["map"], dock_layout=layout)
     return cfg
@@ -68,6 +73,7 @@ class Monitor:
         self.max_osc = 0
         self.violations = defaultdict(list)
         self.units = []
+        self.pairs = {}             # PROPOSED S1: frozenset(robot ids) -> ticks shared after their task let them go
         orig = T.PIBT.step
         mon = self
 
@@ -121,10 +127,11 @@ class Monitor:
 
     def after_tick(self, prev_cells):
         sim = self.sim
-        # S1 vertex conflicts
+        # S1 vertex conflicts (registered rule), and the PROPOSED amendment S1p alongside
         by_cell = defaultdict(list)
         for r in sim.robots:
             by_cell[r.cell].append(r)
+        pairs_now = {}
         for cell, rs in by_cell.items():
             if len(rs) > 1:
                 tids = {r.task_id for r in rs}
@@ -132,6 +139,20 @@ class Monitor:
                       and all(r.role == sim.tasks[r.task_id].type.carrier_role for r in rs))
                 if not ok:
                     self.violations["S1"].append((sim.tick, cell, [r.id for r in rs]))
+                # S1p: (ii) a task's carrier and its crew on that task's work cell are allowed
+                t = sim.tasks.get(next(iter(tids))) if len(tids) == 1 and None not in tids else None
+                crew_ok = t is not None and cell in (t.stage_cell, t.payload_cell)
+                if ok or crew_ok:
+                    pairs_now[frozenset(r.id for r in rs)] = 0
+                    continue
+                # (iii) former partners (allowed last tick) still parting: at most SEPARATE ticks
+                key = frozenset(r.id for r in rs)
+                prev = self.pairs.get(key)
+                if prev is not None and prev + 1 <= SEPARATE:
+                    pairs_now[key] = prev + 1
+                    continue
+                self.violations["S1p"].append((sim.tick, cell, [r.id for r in rs]))
+        self.pairs = pairs_now
         # S2 swaps
         cur = {r.id: r.cell for r in sim.robots}
         at_prev = {c: i for i, c in prev_cells.items()}
@@ -233,14 +254,14 @@ def report(out_dir):
     import glob
     rows = [json.load(open(p)) for p in sorted(glob.glob(os.path.join(out_dir, "ep_*.json")))]
     ref = {(r["scenario"], r["seed"], r["mode"]): r for r in rows if r["config"] == "REF"}
-    gate = {"R0": [], "S1": [], "S2": [], "S3": [], "L1": [], "L2": [], "L3": []}
+    gate = {"R0": [], "S1": [], "S1p": [], "S2": [], "S3": [], "L1": [], "L2": [], "L3": []}
     for r in rows:
         key = (r["scenario"], r["seed"], r["mode"])
         if r["config"] == "A" and key in ref:
             gate["R0"].append((key, r["digests"] == ref[key]["digests"]))
         twoone = r["config"] in ("B", "D")
         if twoone:
-            for s in ("S1", "S2", "S3"):
+            for s in ("S1", "S1p", "S2", "S3"):
                 gate[s].append((key + (r["config"],), r["n_violations"].get(s, 0)))
         if twoone and r["mode"] == "macro":
             for s in ("L1", "L2"):
@@ -262,7 +283,8 @@ def report(out_dir):
             verdict[k] = (tot == 0 and len(v) > 0, "%d episodes, %d violations" % (len(v), tot))
     print("=== GATE ===")
     for k, (ok, msg) in verdict.items():
-        print("  %-3s %s  %s" % (k, "PASS" if ok else "FAIL", msg))
+        note = "   (PROPOSED amendment, not registered)" if k == "S1p" else ""
+        print("  %-3s %s  %s%s" % (k, "PASS" if ok else "FAIL", msg, note))
     print("\n=== Descriptive (macro, mean over seeds) ===")
     print("%-19s %-3s %7s %8s %8s %9s %9s %8s %8s %7s %6s" % ("scenario", "cfg", "tasks", "latency", "kWh", "stalled",
           "behind_L", "appr/chg", "moves/t", "maxNP", "strand"))
@@ -283,7 +305,7 @@ def report(out_dir):
         bad = [r for r in rows if r["n_violations"].get(k)]
         for r in bad[:6]:
             print("  %s %s/%s/%s/%s: %s" % (k, r["scenario"], r["seed"], r["config"], r["mode"], r["violations"][k][:3]))
-    return all(ok for ok, _ in verdict.values())
+    return all(ok for k, (ok, _) in verdict.items() if k != "S1p")
 
 
 if __name__ == "__main__":

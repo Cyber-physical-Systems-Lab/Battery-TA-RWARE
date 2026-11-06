@@ -165,3 +165,25 @@ def test_staging_cells_are_neutral_in_2_1():
     dock = sim.layout.cells("dock")[0]
     assert not sim._neutral_cell(goal) and not sim._neutral_cell(dock)
     assert sim._neutral_cell(sim.layout.cells("aisle")[0])
+
+
+def test_pickers_work_on_the_shelf_cell_in_2_1():
+    import battery_tarware as bt
+    roles21 = {r["name"]: r.get("presence") for t in bt.get_scenario("basic")["task_types"]
+               if t["name"] == "standard" for r in t["roles"]}
+    roles20 = {r["name"]: r.get("presence") for t in bt.get_scenario("basic", model="2.0")["task_types"]
+               if t["name"] == "standard" for r in t["roles"]}
+    assert roles21["picker"] == "on_cell" and roles20["picker"] == "adjacent"
+    env = bt.make("basic")
+    sim = env.unwrapped.sim
+    co = bt.GreedyCoalitionCoordinator()
+    env.reset(seed=0)
+    shared = False
+    for _ in range(60):
+        env.step(co.act(env))
+        for t in sim.tasks.values():
+            if not t.done and t.carriers and t.assigned.get("picker"):
+                car = sim.robots[t.carriers[0]]
+                if any(sim.robots[i].cell == car.cell and sim.robots[i].worked for i in t.assigned["picker"]):
+                    shared = True
+    assert shared

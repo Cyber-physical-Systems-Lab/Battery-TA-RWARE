@@ -226,11 +226,27 @@ ADVANCED: Dict[str, Any] = {
 SCENARIOS: Dict[str, Dict[str, Any]] = {"basic": BASIC, "intermediate": INTERMEDIATE, "advanced": ADVANCED}
 
 
-def get_scenario(name: str) -> Dict[str, Any]:
-    """A deep copy of a built-in scenario dict (edit it, then pass it to make / from_dict)."""
+# Model 2.1 (TA-RWARE semantics): a picking robot steps onto the shelf cell beside the AGV to load or
+# unload it, instead of working from the next cell. These (task type, role) pairs become on_cell.
+ON_CELL_21 = {"basic": {("standard", "picker"), ("large", "picker")},
+              "intermediate": {("case", "picker"), ("pallet", "picker")}}
+
+
+def get_scenario(name: str, model: str = "2.1") -> Dict[str, Any]:
+    """A deep copy of a built-in scenario dict (edit it, then pass it to make / from_dict).
+    ``model="2.0"`` returns the scenario exactly as in model 2.0 (pickers work from the next cell)."""
     if name not in SCENARIOS:
         raise ConfigError("unknown scenario %r; built-in: %s" % (name, sorted(SCENARIOS)))
-    return copy.deepcopy(SCENARIOS[name])
+    d = copy.deepcopy(SCENARIOS[name])
+    if model == "2.0":
+        d["model"] = "2.0"
+        return d
+    for tt in d["task_types"]:
+        for role in tt["roles"]:
+            if (tt["name"], role["name"]) in ON_CELL_21.get(name, ()):
+                role["presence"] = "on_cell"
+                role.pop("radius", None)
+    return d
 
 
 def resolve_scenario(scenario: Union[str, dict, ScenarioConfig] = "basic", **overrides: Any) -> ScenarioConfig:
@@ -241,7 +257,7 @@ def resolve_scenario(scenario: Union[str, dict, ScenarioConfig] = "basic", **ove
         return cfg.replace(**overrides) if overrides else cfg
     if isinstance(scenario, str):
         if scenario in SCENARIOS:
-            d = get_scenario(scenario)
+            d = get_scenario(scenario, model=overrides.get("model", "2.1"))
         elif Path(scenario).suffix in (".json", ".yaml", ".yml"):
             cfg = ScenarioConfig.load(scenario)
             return cfg.replace(**overrides) if overrides else cfg

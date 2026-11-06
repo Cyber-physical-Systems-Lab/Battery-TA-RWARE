@@ -878,7 +878,15 @@ class Simulator:
             lasting = not ok or any(m.charging for m in members)     # charging, failed or stranded
             if self.config.model != "2.0" and not lasting and goal == r.cell and self._stationed(r):
                 lasting = True       # model 2.1: parked on its own stage cell until the stage is done
-            units.append(Unit(r.id, members, r.cell, goal, tuple(sorted(zones)), key, fixed, r.elapsed, lasting))
+            meet = None
+            if self.config.model != "2.0" and r.task_id is not None:
+                t = self.tasks[r.task_id]
+                if r.role == t.type.carrier_role:
+                    meet = (t.id, t.stage_cell if t.carried else t.payload_cell)
+                else:
+                    mc = self._meet_cell(r)
+                    meet = None if mc is None else (t.id, mc)
+            units.append(Unit(r.id, members, r.cell, goal, tuple(sorted(zones)), key, fixed, r.elapsed, lasting, meet))
         self._traffic.step(units)
         for u in units:
             lead = self.robots[u.id]
@@ -931,6 +939,19 @@ class Simulator:
             return 10_000_000 + r.task_id
         return -1 - r.id
 
+    def _meet_cell(self, r: Robot) -> Optional[Cell]:
+        """Model 2.1: the cell where a non-carrier crew member with ``on_cell`` presence works beside
+        its task's carrier (the two may share it), or None."""
+        if r.task_id is None:
+            return None
+        t = self.tasks[r.task_id]
+        if t.type.carrier_role is None or r.role == t.type.carrier_role:
+            return None
+        if t.type.role(r.role).presence != "on_cell":
+            return None
+        s = t.next_stage_for(r.role)
+        return None if s is None else t.stage_cells[s]
+
     def _move(self, intents: Dict[int, Cell]) -> None:
         # one mover per robot, except joint carrier groups (lead only; followers ride along)
         followers: Dict[int, List[int]] = {}
@@ -942,6 +963,11 @@ class Simulator:
         skip = {f for fs in followers.values() for f in fs}
         positions = {r.id: r.cell for r in self.robots if r.id not in skip}
         shared = {r.id: self._share_key(r) for r in self.robots if r.id not in skip}
+        if self.config.model != "2.0":                  # crew co-location on the stage cell
+            for r in self.robots:
+                cell = self._meet_cell(r)
+                if r.id in shared and cell is not None and intents.get(r.id, r.cell) == cell:
+                    shared[r.id] = 10_000_000 + r.task_id
         intents = {m: c for m, c in intents.items() if m in positions}
         ok = resolve_moves(positions, intents, shared)
         for m, cell in intents.items():

@@ -58,12 +58,13 @@ def reverse_distances(layout, passable: np.ndarray, goal: Cell) -> np.ndarray:
 
 
 class Unit:
-    __slots__ = ("id", "members", "cell", "goal", "zones", "key", "fixed", "priority", "next", "lasting")
+    __slots__ = ("id", "members", "cell", "goal", "zones", "key", "fixed", "priority", "next", "lasting", "meet")
 
-    def __init__(self, id_, members, cell, goal, zones, key, fixed, priority, lasting=False):
+    def __init__(self, id_, members, cell, goal, zones, key, fixed, priority, lasting=False, meet=None):
         self.id, self.members, self.cell, self.goal = id_, members, cell, goal
         self.zones, self.key, self.fixed, self.priority = zones, key, fixed, priority
         self.lasting = lasting                   # model 2.1: fixed for longer than a tick or two
+        self.meet = meet                         # model 2.1: (task id, cell) where this crew may share a cell
         self.next: Optional[Cell] = None
 
 
@@ -125,8 +126,11 @@ class PIBT:
             if u.next is None:
                 self._pibt(u, None)
 
-    def _compatible(self, a: Unit, b: Unit) -> bool:
-        return a.key is not None and a.key == b.key
+    def _compatible(self, a: Unit, b: Unit, cell: Optional[Cell] = None) -> bool:
+        if a.key is not None and a.key == b.key:
+            return True
+        # model 2.1: a task's carrier and its on_cell crew may share the cell where they work together
+        return a.meet is not None and a.meet == b.meet and cell == a.meet[1]
 
     def _reserve(self, u: Unit, c: Cell) -> None:
         u.next = c
@@ -144,7 +148,7 @@ class PIBT:
             for k, (dy, dx) in enumerate(MOVES):
                 c = (u.cell[0] + dy, u.cell[1] + dx)
                 if sim.layout.in_bounds(c) and pas[c] and sim.layout.move_ok(u.cell, c, k):
-                    busy = any(w is not u and not self._compatible(u, w) for w in self.now.get(c, []))
+                    busy = any(w is not u and not self._compatible(u, w, c) for w in self.now.get(c, []))
                     out.append((1, int(busy), k, c))
             return [c for *_, c in sorted(out)]
         dist = self.route_distances(u)
@@ -155,7 +159,7 @@ class PIBT:
                 continue
             if pas[c] or c == u.goal:
                 # ties in distance go to cells nobody occupies (avoids needless pushing back and forth)
-                busy = any(w is not u and not self._compatible(u, w) for w in self.now.get(c, []))
+                busy = any(w is not u and not self._compatible(u, w, c) for w in self.now.get(c, []))
                 out.append((int(dist[c]), int(busy), k, c))
         return [c for *_, c in sorted(out)]
 
@@ -172,7 +176,7 @@ class PIBT:
 
     def _occupant(self, u: Unit, c: Cell) -> Optional[Unit]:
         for w in self.now.get(c, []):
-            if w is not u and not self._compatible(u, w) and w.next is None and not w.fixed:
+            if w is not u and not self._compatible(u, w, c) and w.next is None and not w.fixed:
                 return w
         return None
 
@@ -197,13 +201,13 @@ class PIBT:
         for c in cands:
             if parent is not None and c == parent.cell:
                 continue                                         # no swapping with the pusher
-            if any(not self._compatible(u, o) for o in self.reserved.get(c, []) if o is not u):
+            if any(not self._compatible(u, o, c) for o in self.reserved.get(c, []) if o is not u):
                 continue
             self._reserve(u, c)
             ok = True
             for w in list(self.now.get(c, [])):
-                if w is u or self._compatible(u, w) or w.next is not None:
-                    if w is not u and not self._compatible(u, w) and w.next == c:
+                if w is u or self._compatible(u, w, c) or w.next is not None:
+                    if w is not u and not self._compatible(u, w, c) and w.next == c:
                         ok = False                               # occupant stays here
                         break
                     continue

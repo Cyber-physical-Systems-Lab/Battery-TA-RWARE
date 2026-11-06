@@ -178,13 +178,15 @@ def rgb_array(sim, cell_px: int = 30, crew_lines: bool = True) -> np.ndarray:
             x0, y0, x1, y1 = box(cell)
             _rect(img, x0 + pad, y0 + pad, x1 - pad, y1 - pad, SHELF_REQUESTED)
         n = len(rs)
-        rad = radius if n == 1 else radius * 0.7
+        rad = radius if n == 1 else radius * 0.6
         for k, r in enumerate(rs):
             if n == 1:
                 cx, cy = cx0, cy0
-            else:                                          # co-located robots (joint carriers) side by side
+            elif n == 2:                                   # co-located pair (AGV + picker, joint carriers): side by side
+                cx, cy = cx0 + cell_px * 0.24 * (2 * k - 1), cy0 - cell_px * 0.08
+            else:
                 a = 2 * math.pi * k / n + math.pi / 4
-                cx, cy = cx0 + cell_px * 0.2 * math.cos(a), cy0 + cell_px * 0.2 * math.sin(a)
+                cx, cy = cx0 + cell_px * 0.24 * math.cos(a), cy0 + cell_px * 0.24 * math.sin(a)
             verts = regular_polygon(cx, cy, rad, type_sides(r.type_index))
             _polygon(img, verts, (0, 0, 0))                # outline
             _polygon(img, regular_polygon(cx, cy, rad - 1.2, type_sides(r.type_index)),
