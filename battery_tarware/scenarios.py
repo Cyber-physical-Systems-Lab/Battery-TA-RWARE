@@ -1,12 +1,22 @@
 """Built-in scenarios (benchmark tiers) and scenario resolution.
 
-Tiers add *explicit cooperation constraints*, not just more robots:
+Tiers add *explicit cooperation constraints*, not just more robots. The robot types follow roles
+found in automated warehouses:
 
-basic         two robot roles (AGV, picker), retrieval tasks needing 1-3 robots, one charger type.
-intermediate  heterogeneity within roles (light/fast vs heavy/slow AGVs, fast vs standard pickers),
+* ``agv`` / ``tote_agv`` / ``pallet_agv``: mobile robots that carry totes, shelves or pallets;
+* ``picking_robot`` / ``fast_picking_robot``: mobile piece-picking robots, i.e. a mobile base
+  with an arm and gripper. One drives up beside a shelf, picks the order items into the AGV's tote
+  and puts returned items back. It cannot carry loads itself;
+* ``forklift``: an autonomous forklift for heavy pallets (receiving, put-away, relocation);
+* ``mobile_manipulator``: a mobile arm that handles goods at receiving, packing and quality check;
+* ``inventory_drone``: an indoor drone that scans shelves (cycle counts) and checks orders.
+
+basic         two robot roles (AGV, picking robot), retrieval tasks needing 1-3 robots, one charger
+              type.
+intermediate  heterogeneity within roles (tote vs pallet AGVs, fast vs standard picking robots),
               joint transport of heavy loads, peak/trough demand, fast and slow chargers with
-              compatibility limits, limited sensing and communication for pickers.
-advanced      four robot types (AGV, forklift, mobile manipulator, inspection drone), custom zones
+              compatibility limits, limited sensing and communication for picking robots.
+advanced      four robot types (AGV, forklift, mobile manipulator, inventory drone), custom zones
               (receiving, quality check), multi-stage dependency-linked jobs (inbound -> inspection),
               relocations, deadlines, breakdowns and noisy localization.
 
@@ -45,17 +55,17 @@ def _retrieval(name: str, pickers: int, weight: Dict[str, float]) -> Dict[str, A
 
 BASIC: Dict[str, Any] = {
     "name": "basic",
-    "description": "AGV + picker roles; SOLO / STANDARD / LARGE retrieval; one charger type.",
+    "description": "AGV + picking-robot roles; SOLO / STANDARD / LARGE retrieval; one charger type.",
     "map": {"generator": {"rack_rows": 2, "rack_cols": 3, "rack_height": 4, "goals": 2, "docks": 4}},
     "robot_types": [
         {"name": "agv", "capabilities": ["transport"], "speed": 1.0, "payload_kg": 25.0,
          "zones": ["aisle", "storage", "goal", "dock"], "zones_loaded": ["aisle", "goal", "dock"],
          "energy": AGV_ENERGY},
-        {"name": "picker", "capabilities": ["pick"], "speed": 1.0, "payload_kg": 0.0,
+        {"name": "picking_robot", "capabilities": ["pick"], "speed": 1.0, "payload_kg": 0.0,
          "zones": ["aisle", "goal", "dock"], "energy": PICKER_ENERGY},
     ],
     "fleet": [{"type": "agv", "count": 6, "initial_soc": [0.5, 1.0]},
-              {"type": "picker", "count": 3, "initial_soc": [0.5, 1.0]}],
+              {"type": "picking_robot", "count": 3, "initial_soc": [0.5, 1.0]}],
     "charger_types": [{"name": "standard", "power_w": 1000.0}],
     "task_types": [
         _retrieval("solo", 0, {"kind": "normal", "mean": 2.5, "std": 1.0, "low": 0.5, "high": 6.0}),
@@ -71,26 +81,26 @@ INTERMEDIATE: Dict[str, Any] = {
     "description": "Within-role heterogeneity, joint transport, peak demand, fast/slow chargers, limited sensing.",
     "map": {"generator": {"rack_rows": 3, "rack_cols": 4, "rack_height": 4, "goals": 3, "docks": 6}},
     "robot_types": [
-        {"name": "agv_light", "capabilities": ["transport"], "speed": 1.0, "payload_kg": 20.0,
+        {"name": "tote_agv", "capabilities": ["transport"], "speed": 1.0, "payload_kg": 20.0,
          "zones": ["aisle", "storage", "goal", "dock"], "zones_loaded": ["aisle", "goal", "dock"],
          "energy": {**AGV_ENERGY, "capacity_wh": 1200.0, "move_w": 120.0}},
-        {"name": "agv_heavy", "capabilities": ["transport"], "speed": 0.5, "payload_kg": 60.0,
+        {"name": "pallet_agv", "capabilities": ["transport"], "speed": 0.5, "payload_kg": 60.0,
          "zones": ["aisle", "storage", "goal", "dock"], "zones_loaded": ["aisle", "goal", "dock"],
          "charger_types": ["slow"], "energy": {**AGV_ENERGY, "capacity_wh": 2500.0, "move_w": 190.0,
                                                 "payload_w_per_kg": 1.2, "max_charge_w": 1000.0}},
-        {"name": "picker_fast", "capabilities": ["pick"], "speed": 1.0, "handling_speed": 2.0,
+        {"name": "fast_picking_robot", "capabilities": ["pick"], "speed": 1.0, "handling_speed": 2.0,
          "zones": ["aisle", "goal", "dock"], "sensing_range": 6, "comm_range": 10,
          "energy": {**PICKER_ENERGY, "capacity_wh": 800.0, "handling_w": 120.0}},
-        {"name": "picker", "capabilities": ["pick"], "speed": 0.8, "handling_speed": 1.0,
+        {"name": "picking_robot", "capabilities": ["pick"], "speed": 0.8, "handling_speed": 1.0,
          "zones": ["aisle", "goal", "dock"], "sensing_range": 6, "comm_range": 10, "energy": PICKER_ENERGY},
     ],
     "fleet": [
-        {"type": "agv_light", "count": 5, "initial_soc": [0.3, 1.0]},
-        {"type": "agv_light", "name": "agv_light_old", "count": 1, "initial_soc": 0.6,
+        {"type": "tote_agv", "count": 5, "initial_soc": [0.3, 1.0]},
+        {"type": "tote_agv", "name": "tote_agv_old", "count": 1, "initial_soc": 0.6,
          "overrides": {"energy": {"capacity_wh": 800.0}}},                  # an aged battery
-        {"type": "agv_heavy", "count": 2, "initial_soc": [0.5, 1.0]},
-        {"type": "picker_fast", "count": 2, "initial_soc": [0.4, 1.0]},
-        {"type": "picker", "count": 3, "initial_soc": [0.4, 1.0]},
+        {"type": "pallet_agv", "count": 2, "initial_soc": [0.5, 1.0]},
+        {"type": "fast_picking_robot", "count": 2, "initial_soc": [0.4, 1.0]},
+        {"type": "picking_robot", "count": 3, "initial_soc": [0.4, 1.0]},
     ],
     "charger_types": [{"name": "fast", "power_w": 3000.0, "share": 1.0},
                       {"name": "slow", "power_w": 800.0, "share": 2.0}],
@@ -137,7 +147,7 @@ QQSS..SS..SS..SS..
 
 ADVANCED: Dict[str, Any] = {
     "name": "advanced",
-    "description": "AGV, forklift, mobile manipulator, inspection drone; receiving and QC zones; "
+    "description": "AGV, forklift, mobile manipulator, inventory drone; receiving and QC zones; "
                    "dependency-linked inbound jobs; joint transport; deadlines; breakdowns; noisy localization.",
     "map": {"ascii": ADVANCED_MAP, "zones": {"I": "receiving", "Q": "qc"}},
     "robot_types": [
@@ -150,11 +160,11 @@ ADVANCED: Dict[str, Any] = {
          "energy": {"capacity_wh": 6000.0, "idle_w": 40.0, "move_w": 900.0, "payload_w_per_kg": 2.0,
                     "handling_w": 600.0, "max_charge_w": 1500.0},
          "failure": {"rate": 0.0001, "repair_ticks": 120}},
-        {"name": "arm", "capabilities": ["manipulate", "pick"], "speed": 0.6, "handling_speed": 1.5,
+        {"name": "mobile_manipulator", "capabilities": ["manipulate", "pick"], "speed": 0.6, "handling_speed": 1.5,
          "zones": ["aisle", "goal", "receiving", "qc", "dock"],
          "energy": {"capacity_wh": 1500.0, "idle_w": 30.0, "move_w": 160.0, "payload_w_per_kg": 0.0,
                     "handling_w": 250.0, "max_charge_w": 1500.0}},
-        {"name": "drone", "capabilities": ["inspect"], "speed": 1.0,
+        {"name": "inventory_drone", "capabilities": ["inspect"], "speed": 1.0,
          "zones": ["aisle", "storage", "qc", "dock", "receiving", "goal"],
          "sensing_range": 8, "comm_range": 8, "localization_noise": 0.5, "charger_types": ["fast"],
          "energy": {"capacity_wh": 300.0, "idle_w": 60.0, "move_w": 250.0, "payload_w_per_kg": 0.0,
@@ -163,8 +173,8 @@ ADVANCED: Dict[str, Any] = {
     "fleet": [
         {"type": "agv", "count": 6, "initial_soc": [0.4, 1.0]},
         {"type": "forklift", "count": 2, "initial_soc": [0.6, 1.0]},
-        {"type": "arm", "count": 3, "initial_soc": [0.5, 1.0]},
-        {"type": "drone", "count": 2, "initial_soc": [0.3, 1.0]},
+        {"type": "mobile_manipulator", "count": 3, "initial_soc": [0.5, 1.0]},
+        {"type": "inventory_drone", "count": 2, "initial_soc": [0.3, 1.0]},
     ],
     "charger_types": [{"name": "fast", "power_w": 3000.0, "share": 1.0},
                       {"name": "slow", "power_w": 1200.0, "share": 1.0}],
