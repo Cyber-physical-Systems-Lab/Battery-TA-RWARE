@@ -115,3 +115,66 @@ All criteria are checked every tick by an external validator (`validation/model_
   - every rerun is listed in the outcome section (no silent iterations).
 - **Until all of R0, S1–S3, L1–L3 and T pass:** no RA-L coordination experiment on v2.
 - Performance differences between A–D are descriptive. They are not a criterion and not a claim.
+
+## OUTCOME so far (2026-11-06): gate NOT passed after 5 full runs; stopped for decisions
+
+**Mechanics smoke.** Before run 1, a smoke test of the validator ran on 4 episodes (basic seed 0
+REF/A/B; basic_large seed 0 D). It is disclosed here, but no threshold depended on it.
+
+**Run setup.**
+- Every run is the full gate: 165 episodes, plus the REF episodes.
+- REF digests come from the unchanged base commit 797000c (run 1) and are reused in later runs.
+- Outputs: `validation/model_2_1/out/run{1..5}/` (report.txt, RUN_INFO).
+
+### Runs
+
+| Run | Commit | R0 | S1 | S2 | S3 | L1 | L2 | L3 | Revision after it |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | ee7c86a | PASS 45/45 | FAIL 932 | PASS | PASS | FAIL 47 | FAIL 84 | FAIL (1 pair) | Docks are destinations only (idle robots were pushed into dead-end bays and shuttled in and out) |
+| 2 | 2bba4aa | PASS | FAIL 934 | PASS | PASS | FAIL 39 | FAIL 47 | PASS | Staging only on neutral cells (loaded AGVs staged on another task's goal cell, got pushed off and came back) |
+| 3 | 6132604 | PASS | FAIL 930 | PASS | PASS | FAIL 28 | FAIL 27 | PASS | Robots parked on their own stage cell route as long-lived obstacles (4-robot circular wait, ~1400 ticks, also in 2.0) |
+| 4 | eda2b30 | PASS | FAIL 916 | PASS | PASS | FAIL 6 | FAIL 10 | FAIL (advanced s4 D: 2 drones stranded) | Admission for shared stage cells (hold-and-wait deadlock on the shared QC cell) |
+| 5 | dd7c98f | PASS | FAIL 944 | PASS | PASS | FAIL 7 | FAIL 8 | PASS | — (stopped for decisions) |
+
+API probe (S3): model 2.0 accepts a 2nd and 3rd robot sent to a reserved/occupied dock; 2.1 rejects both.
+
+### Remaining failures
+
+**S1.** Every violation is the same mechanism, verified for all 467 cases in run 1 config B:
+- Two former co-carriers stay on one cell after a joint task completes (or after release), until they
+  drive apart.
+- The rate is identical in model 2.0 (REF). There are no other vertex conflicts.
+- This follows from the joint-transport abstraction (joint carriers share one cell).
+- It cannot pass S1 as registered without either redesigning joint transport, or a user-approved amendment to
+  S1. Any such amendment would be flagged as made after seeing results.
+
+**L1/L2.** These are rare residuals:
+
+| | Model 2.0 (A) | Run 5 (B + D) |
+|---|---|---|
+| L1 | 33 | 7 |
+| L2 | 30 | 8 |
+| Longest no-progress streak | — | 160 ticks |
+
+The residuals are dense-aisle and goal-row interactions in the large and advanced maps.
+
+### Notes on the implementation (not the gate)
+
+M1 and M2 as implemented differ from section 2's description in three places:
+- **(a) Failure releases the dock.** A broken-down robot heading to a dock gives the dock up, as 2.0 does for a
+  charging robot. Keeping it would leak a reservation, since 2.0 resumes such a robot as IDLE.
+- **(b) Short-lived fixed units are waited for.** Units without speed credit, or working a stage, are not
+  routed around.
+- **(c) Additional 2.1 rules** were added after runs 1–4: destination-only docks, neutral staging cells,
+  stationed robots as obstacles, and shared-cell admission.
+
+### Descriptive (run 5; not a criterion)
+
+**2.1 vs 2.0, inline layout** (paired seeds):
+
+| Scenario | Stalled robot-ticks | Tasks | Mean latency |
+|---|---|---|---|
+| basic_large | 2438 → 207 | 220 → 223 | — |
+| advanced | — | 293 → 280 (−4.6%) | 217 → 208 |
+
+**Bays with 2.1 (D):** no scenario loses throughput against C.
