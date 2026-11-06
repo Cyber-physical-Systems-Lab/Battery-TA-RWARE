@@ -178,3 +178,42 @@ M1 and M2 as implemented differ from section 2's description in three places:
 | advanced | — | 293 → 280 (−4.6%) | 217 → 208 |
 
 **Bays with 2.1 (D):** no scenario loses throughput against C.
+
+## Runs 6–7 (2026-11-06): pickers on the shelf cell (user request), gate still NOT passed
+
+**User observation (from the GIFs).** The picking robot did not step onto the shelf cell beside the AGV,
+as it does in TA-RWARE (v1 `tarware/warehouse.py`: a picker steps onto an AGV's rack cell, one picker per
+shelf location).
+
+**Model 2.1 changes.**
+- Built-in picker roles are `on_cell`.
+- A task's carrier and its `on_cell` crew may share their work cell (PIBT meet-compatibility, and
+  primitive shared groups).
+- For tasks needing 2 pickers, one picker is `on_cell`; the second (`picker_2`) works from the next cell.
+- `get_scenario(name, model="2.0")` returns the exact 2.0 definitions, so R0 still compares like with
+  like.
+
+**S1 as registered** counts this intended co-location as a violation. The validator therefore also
+reports a **PROPOSED, unregistered** amendment, **S1p**. It forbids vertex sharing except:
+- co-carriers of a task;
+- a task's crew on that task's stage or payload cell;
+- former partners parting within 10 ticks.
+
+S1p was defined before run 6. Its partner tracking was revised after run 6 (a group that is a subset of
+a group allowed on the same cell the tick before), which is disclosed here.
+
+| Run | Commit | R0 | S1 (registered) | S1p (proposed) | S2 | S3 | L1 | L2 | L3 | Revision after it |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 6 | 3886d65 | PASS | FAIL 69811 | FAIL 2056 | PASS | PASS | FAIL 4 | FAIL 6 | PASS | One picker per shelf cell (LARGE/pallet put 2 pickers + AGV on one cell); S1p tracking revised |
+| 7 | f26b250 | PASS | FAIL 42523 | PASS 0 | PASS | PASS | FAIL 5 | FAIL 6 | PASS | — (stopped for decisions) |
+
+**Remaining L1/L2.** 11 events, against 63 in model 2.0. They are in advanced and advanced_large (and one in
+intermediate_large D); the longest no-progress streak is 160 ticks.
+
+**Descriptive (run 7, B vs A):**
+
+| Scenario | Tasks | Mean latency |
+|---|---|---|
+| basic | 203 → 199 (pickers now enter the shelf cell) | — |
+| basic_large | 220 → 224 | — |
+| intermediate | 134.4 → 134.6 | 67.6 → 64.9 |
