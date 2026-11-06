@@ -140,19 +140,24 @@ class PIBT:
         self.reserved[c].remove(u)
         u.next = None
 
-    def _candidates(self, u: Unit) -> List[Cell]:
+    def _candidates(self, u: Unit, parent: Optional[Unit] = None) -> List[Cell]:
         sim = self.sim
         pas = self.passable(u.zones)
+        # model 2.1: a unit pushed by ``parent`` prefers stepping aside to retreating straight ahead
+        # of it (equal distance), so a slow robot is not driven down a corridor by a faster one
+        ahead = None
+        if parent is not None and getattr(sim, "config", None) is not None and sim.config.model != "2.0":
+            ahead = (2 * u.cell[0] - parent.cell[0], 2 * u.cell[1] - parent.cell[1])
         if u.goal is None:
-            out = [(0, 0, -1, u.cell)]
+            out = [(0, 0, 0, -1, u.cell)]
             for k, (dy, dx) in enumerate(MOVES):
                 c = (u.cell[0] + dy, u.cell[1] + dx)
                 if sim.layout.in_bounds(c) and pas[c] and sim.layout.move_ok(u.cell, c, k):
                     busy = any(w is not u and not self._compatible(u, w, c) for w in self.now.get(c, []))
-                    out.append((1, int(busy), k, c))
+                    out.append((1, int(c == ahead), int(busy), k, c))
             return [c for *_, c in sorted(out)]
         dist = self.route_distances(u)
-        out = [(int(dist[u.cell]), 0, -1, u.cell)]
+        out = [(int(dist[u.cell]), 0, 0, -1, u.cell)]
         for k, (dy, dx) in enumerate(MOVES):
             c = (u.cell[0] + dy, u.cell[1] + dx)
             if not sim.layout.in_bounds(c) or not sim.layout.move_ok(u.cell, c, k):
@@ -160,7 +165,7 @@ class PIBT:
             if pas[c] or c == u.goal:
                 # ties in distance go to cells nobody occupies (avoids needless pushing back and forth)
                 busy = any(w is not u and not self._compatible(u, w, c) for w in self.now.get(c, []))
-                out.append((int(dist[c]), int(busy), k, c))
+                out.append((int(dist[c]), int(c == ahead), int(busy), k, c))
         return [c for *_, c in sorted(out)]
 
     def _dead_end(self, w: Unit, exit_cell: Cell) -> bool:
@@ -181,7 +186,7 @@ class PIBT:
         return None
 
     def _pibt(self, u: Unit, parent: Optional[Unit]) -> bool:
-        cands = self._candidates(u)
+        cands = self._candidates(u, parent)
         # swap operation (Okumura, IJCAI 2023), restricted to dead ends: if the best cell holds a unit stuck in a dead end whose only
         # way out is u's cell, waiting cannot help -- u steps away instead and pulls that unit out
         swap = None

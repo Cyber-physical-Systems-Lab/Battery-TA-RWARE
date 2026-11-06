@@ -285,14 +285,14 @@ def report(out_dir):
             verdict[k] = (tot == 0 and len(v) > 0, "%d episodes, %d violations" % (len(v), tot))
     print("=== GATE ===")
     for k, (ok, msg) in verdict.items():
-        note = "   (PROPOSED amendment, not registered)" if k == "S1p" else ""
+        note = "   (= S1a/S1b, POST HOC amendment frozen 2026-11-06)" if k == "S1p" else ""
         print("  %-3s %s  %s%s" % (k, "PASS" if ok else "FAIL", msg, note))
     print("\n=== Descriptive (macro, mean over seeds) ===")
     print("%-19s %-3s %7s %8s %8s %9s %9s %8s %8s %7s %6s" % ("scenario", "cfg", "tasks", "latency", "kWh", "stalled",
           "behind_L", "appr/chg", "moves/t", "maxNP", "strand"))
     for sc in SCENARIOS:
         for cf in ("A", "B", "C", "D"):
-            rs = [by[(sc, s, cf)] for s in range(5) if (sc, s, cf) in by]
+            rs = [by[(sc, s, cf)] for s in range(100) if (sc, s, cf) in by]
             if not rs:
                 continue
             mean = lambda f: sum(f(r) for r in rs) / len(rs)
