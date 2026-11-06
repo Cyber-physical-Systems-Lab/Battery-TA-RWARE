@@ -19,6 +19,7 @@ Coordinates are `(row, col)`.
 | `demand` | list of [demand stream](#demand-stream) | required | where tasks come from |
 | `action_mode` | `macro` \| `primitive` | `macro` | action set |
 | `max_steps` | int | 5000 | truncation |
+| `model` | `"2.1"` \| `"2.0"` | `"2.1"` | simulation model version ([semantics](semantics.md)); `"2.0"` reproduces model 2.0 |
 | `seconds_per_tick` | float | 5.0 | converts power (W) to energy per tick |
 | `rewards` | [rewards](#rewards) | | |
 | `observation` | [observation](#observation) | | |
@@ -43,6 +44,11 @@ Exactly one of `ascii` or `generator`.
   | `docks` | 4 | charger docks |
   | `aisle_width` | 2 | aisle width in cells |
   | `one_way` | false | one-way street grid; only with `aisle_width: 1` |
+
+- `dock_layout`: `inline` (default) or `bays`. With `bays`, every row made only of docks and aisle
+  cells has its aisle cells walled off, so each dock is a one-cell bay that opens onto the corridor
+  next to it and a charging robot blocks no traffic. Works with `ascii` and `generator` maps; not with
+  one-way streets.
 
 ## Robot type
 
@@ -91,6 +97,7 @@ proportion to `share`, interleaved.
 | `name` | required | |
 | `roles` | required | list of `{name, capability, count: 1, presence: adjacent \| on_cell, radius: 1, stay: false}` |
 | `stages` | required | ordered list of `{name, at: origin \| destination \| zone:<name>, roles, duration}` |
+| (presence) | | `on_cell`: the robot stands on the stage cell. In model 2.1 a non-carrier `on_cell` role shares that cell with the carrier while they work (e.g. a picker on the shelf cell beside the AGV); give a second helper its own `adjacent` role. `adjacent`: within `radius` (Chebyshev) of the stage cell |
 | `carrier_role` | null | role holding the payload; it must take part in every stage; `count > 1` = joint transport (capacities add up, the carriers move as one unit, each pays for its share) |
 | `weight` | 0 | number, or `{kind: fixed \| uniform \| normal \| choice, ...}` |
 | `priority` | 1.0 | scales the completion reward; used by the `priority` rule |

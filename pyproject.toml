@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "battery-ta-rware"
-version = "2.0.0"
+version = "2.1.0"
 description = "Battery-TA-RWARE: heterogeneous multi-robot cooperation under battery constraints (Gymnasium + PettingZoo)"
 readme = {file = "README.md", content-type = "text/markdown"}
 authors = [{name = "Xuezhi Niu"}]

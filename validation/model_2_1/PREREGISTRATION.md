@@ -277,3 +277,62 @@ violation.
 - REF episodes from base commit 797000c on seeds 5–9, for R0.
 - The gate verdict uses seeds 5–9 only.
 - Seeds 0–4 are re-run alongside as development seeds (descriptive, and for the advanced throughput analysis).
+
+## CONFIRMATION RUN 8 (2026-11-06): gate PASSED under the frozen amended definitions
+
+**Run setup.** Commit a2c4d69, fresh seeds 5–9. 210 confirmation episodes: 6 scenarios × A–D × macro,
+REF on seeds 5–9, and primitive mode for the 3 tiers. Report: `out/run8/report_confirm.txt`.
+
+| Criterion | Result |
+|---|---|
+| R0 (2.0 reproduced exactly) | PASS, 45/45 |
+| S1 as registered | **FAIL** (40,069; intended co-location). Not reported as passed. |
+| S1a/S1b (post hoc amendment, frozen before run 8) | PASS, 0 |
+| S2, S3 | PASS, 0 |
+| L3 | PASS |
+| L1 / L2 | 1 event each. Both traced (`out/diag8/`) and classified **A, legitimate waiting**; excluded under the frozen rule, listed below |
+
+**Excluded events:**
+- **L1, advanced s7 D, robot 4, tick 4094.** A loaded AGV is on its pickup shelf cell. Its only exit, the
+  single aisle cell (4,16), is held by forklift r7, which broke down at tick 3992 (repair 120 ticks, until
+  4112). The robot cannot leave until the repair ends.
+- **L2, advanced_large s8 D, robot 18, tick 1657.** Handler r18 waits at its standing cell beside its own
+  carrier r7, which broke down at tick 1607 (repair 60 ticks). Its target never changes. The standing cell
+  must be adjacent to the work cell, and it lies in the goal-row corridor. r18 steps aside 5 times, for 5
+  different passing robots or carrier pairs (r0+r3, r2+r4, r17, r6+r11, r16), and returns each time. That
+  is yielding to through traffic while waiting, not oscillating between targets.
+
+**Purity fix after run 8 (commit 31c89ad).** Waiting and parking claims are now written only in the
+movement phase, so `_target` is a pure query. This was found because the throughput analysis's
+`_target` calls changed 2.1 trajectories.
+- All 90 model-2.1 confirmation episodes (B, D, macro and primitive) were re-run on 31c89ad and are
+  **byte-identical** to run 8 (`out/run8b`), so the confirmation applies to 31c89ad.
+- New test: `test_target_is_a_pure_query`.
+
+### Advanced B vs A throughput (paired, seeds 0–9, final code)
+
+Source: `validation/model_2_1/throughput.py`; output `out/throughput_advanced_AB.txt`. Differences are
+B − A with paired bootstrap 95% CIs.
+
+| Measure | Difference [95% CI] |
+|---|---|
+| Tasks completed | +7.3 [−5.6, +20.2] |
+| Mean latency | −16.0 [−34.9, +1.2] |
+| Per task: queue wait | −13.9 [−32.3, +3.0] |
+| Per task: execution | −2.1 [−3.6, −0.8] |
+| Per task: crew gathering | −0.0 [−0.6, +0.4] |
+| Robot-ticks waiting in place | −1220 [−1703, −828] |
+| Robot-ticks moving | +434 [+267, +614] |
+
+**Completions by type.** Demand-driven types differ by +0.2 to +1.1 per episode (order, bulky_order,
+receive, cycle_count). Relocations differ by +4.4 [−10.0, +19.7].
+
+**Reading.** The variability in "tasks completed" is dominated by `relocate`, a backlog filler stream
+(one always open, taken by any free forklift; 13–76 per episode). The earlier "−4.6%" (run 5, seeds 0–4,
+earlier code) was this filler noise. There is no throughput regression on demand-driven tasks.
+
+**D − C:** tasks +15.7 [−1.9, +36.3], latency −20.2 [−37.3, −1.3].
+
+**Open semantic detail (not a gate item).** An `on_cell` picker that arrives before its AGV waits on the
+shelf cell. TA-RWARE has the picker wait just before stepping in. This was left unchanged after the
+confirmation run.
