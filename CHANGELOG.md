@@ -62,11 +62,18 @@ v1 is preserved on branch `v1` (the last v1 `main`, including the PRISM environm
   - PIBT with a swap operation restricted to dead ends in macro mode, and conflict-free simultaneous moves in
     primitive mode;
   - maps from ASCII (custom zones, optional one-way cells) or a generator (aisle width, one-way grids).
-- **Scenarios**: three tiers (basic, intermediate, advanced).
+- **Scenarios**: three tiers (basic, intermediate, advanced). Their robot types are named after
+  warehouse roles: `agv` / `tote_agv` / `pallet_agv`, `picking_robot` / `fast_picking_robot`
+  (mobile piece-picking robots), `forklift`, `mobile_manipulator` and `inventory_drone`.
 - **Coordinators**: greedy coalition baseline, masked random baseline, and documented dispatching
   rules (FIFO, EDD, SPT, CR, priority).
+- **Rendering** in the TA-RWARE style (numpy only):
+  - polygon shape per robot type and colour per activity (idle, travelling, waiting, working,
+    carrying, heading to a charger, charging, failed, stranded);
+  - requested shelves, delivery targets, heading tick and battery badge.
 - **Documentation**:
-  - README with animations and a step-by-step scenario tutorial
+  - README with an annotated explanation figure, four large-scale animations, the action and
+    observation spaces, dynamics and rewards, and a step-by-step scenario tutorial
     ([examples/tutorial.yaml](examples/tutorial.yaml));
   - configuration reference;
   - simulation semantics;
