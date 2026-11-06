@@ -368,7 +368,7 @@ def test_cancel_after_pickup_finishes_physically():
 
 # ─────────────────────────────────────────────────────────────── metrics and determinism
 def test_order_metrics_reconcile_with_state_and_events():
-    src = {"kind": "poisson", "rate": 0.08, "max_orders": 200,
+    src = {"kind": "poisson", "rate": 0.25, "max_orders": 400,
            "mix": {"outbound": 0.6, "inbound": 0.25, "relocation": 0.15}, "due_after": {"kind": "fixed", "value": 250}}
     env, sim = make(initial=None, source=src, weight={"kind": "uniform", "low": 0.5, "high": 16}, max_steps=1200)
     run(env)

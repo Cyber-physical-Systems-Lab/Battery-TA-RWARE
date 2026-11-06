@@ -100,6 +100,7 @@ class OrderTask:
     task_type: Optional[str] = None
     weight_kg: Optional[float] = None
     first_ready: Optional[int] = None
+    ready_since: Optional[int] = None            # last time it (or one of its roles) became open for recruitment
     completed_at: Optional[int] = None
     stalls: int = 0
     waits: Dict[str, int] = field(default_factory=dict)
@@ -233,33 +234,45 @@ class OrderManager:
                 self._accept(self._generate(), "generated")
 
     def _generate(self) -> Dict:
+        """One generated order. The number of random draws is fixed per order (kind, lines,
+        priority, due date, and per line a selection draw, a station draw and a weight draw), so the
+        arrival process is identical for every policy on the same seed; only *which* stored package
+        or shelf a line names depends on the inventory at arrival (by the line's selection draw)."""
         src, rng, inv = self.spec.source, self.rng, self.inventory
         names = sorted(src.mix)
         w = np.array([src.mix[k] for k in names], dtype=float)
         kind = names[int(rng.choice(len(names), p=w / w.sum()))]
         lines = max(1, int(round(src.lines.sample(rng))))
-        d: Dict[str, Any] = {"kind": kind, "op": kind, "priority": src.priority.sample(rng)}
-        if src.due_after is not None:
-            d["due"] = self.sim.tick + max(1, int(round(src.due_after.sample(rng))))
+        d: Dict[str, Any] = {"kind": kind, "priority": src.priority.sample(rng)}
+        due = None if src.due_after is None else self.sim.tick + max(1, int(round(src.due_after.sample(rng))))
+        if due is not None:
+            d["due"] = due
+        draws = [(float(rng.random()), float(rng.random()), self.spec.inventory.package_weight.sample(rng))
+                 for _ in range(lines)]
+        cells = self.stations.get(kind, [])
         if kind == "outbound":
-            cands = sorted(inv.stored_packages(), key=lambda p: p.package_id)
-            k = min(lines, len(cands))
-            idx = sorted(rng.choice(len(cands), size=k, replace=False)) if k else []
-            d["packages"] = [cands[i].package_id for i in idx]
-        elif kind == "inbound":
-            d["count"] = lines
-        else:
+            cands = sorted((p.package_id for p in inv.stored_packages()))
+        elif kind == "relocation":
             taken = {t.shelf_id for t in self.tasks.values() if t.op == "relocation" and not t.terminal}
             cands = sorted(s.shelf_id for s in inv.shelves.values()
                            if s.status == "stored" and s.busy_task is None and s.shelf_id not in taken)
-            k = min(lines, len(cands))
-            idx = sorted(rng.choice(len(cands), size=k, replace=False)) if k else []
-            d["shelves"] = [cands[i] for i in idx]
+        tasks = []
+        for u, v, wt in draws:
+            st = list(cells[int(v * len(cells))]) if cells else None
+            if kind == "inbound":
+                tasks.append({"op": "inbound", "weight_kg": wt, "station": st})
+                continue
+            if not cands:
+                continue
+            pick = cands.pop(int(u * len(cands)))
+            tasks.append({"op": kind, ("package" if kind == "outbound" else "shelf"): pick,
+                          **({"station": st} if st else {})})
+        d["tasks"] = tasks
         return d
 
     def _expand(self, d: Dict) -> List[Dict]:
         """Task dicts of an order (explicit ``tasks`` or the per-operation shorthand)."""
-        if d.get("tasks"):
+        if "tasks" in d:
             return [dict(t) for t in d["tasks"]]
         op = d.get("op") or d.get("kind")
         if op == "outbound":
@@ -497,6 +510,7 @@ class OrderManager:
         self.by_sim[t.id] = ot.task_id
         if ot.first_ready is None:
             ot.first_ready = self.sim.tick
+        ot.ready_since = self.sim.tick
         self._set(ot, S.READY, None, sim_task=t.id, task_type=ttype, origin=origin, destination=dest,
                   weight_kg=round(weight, 3))
 
@@ -533,7 +547,9 @@ class OrderManager:
             return
         inv, tick = self.inventory, self.sim.tick
         t = self.sim.tasks[e.task]
-        if e.type == "payload_picked":
+        if e.type == "robot_released" and e.data.get("reason") not in ("task cancelled",):
+            ot.ready_since = tick                        # a role is open again (stage-by-stage recruitment)
+        elif e.type == "payload_picked":
             s = inv.shelves[ot.shelf_id]
             if e.data.get("reload"):
                 inv.reload(s, ot.task_id, tick)
@@ -563,6 +579,8 @@ class OrderManager:
                 new = FROM_SIM.get(to.value)
                 if new is None or new == ot.state:
                     continue
+                if new in (S.READY, S.SUSPENDED):
+                    ot.ready_since = self.sim.tick
                 self._set(ot, new, reason)
             ot._hp = len(rec.history)
             if ot.state == S.COMPLETED:
