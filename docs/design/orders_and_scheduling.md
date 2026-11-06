@@ -26,6 +26,13 @@ source of the rule set.
 
 ## 1. Entities
 
+**Already implemented (read-only, no behaviour change):** `battery_tarware.tracking.PackageTracker`
+keeps a package ledger and a robot ledger: status, rack, goal, location, handlers, distances and
+timestamps. Today a package is the payload of a carrier task. The entity model below gives packages
+their own identity across tasks (inbound → storage → relocation → outbound), and the tracker will
+key on it.
+
+
 All ids are assigned at release in release order, are unique within an episode and never reused.
 
 - **Order** (`order_id`): an external request of one operation type, with `arrival` tick,

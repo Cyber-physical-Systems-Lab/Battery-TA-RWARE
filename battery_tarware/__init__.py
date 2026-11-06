@@ -25,6 +25,7 @@ from battery_tarware.layout import Layout, generate_ascii
 from battery_tarware.scenarios import SCENARIOS, get_scenario, resolve_scenario
 from battery_tarware.simulator import PRIMITIVE_ACTIONS, Simulator
 from battery_tarware.state_view import StateView, build_state_view
+from battery_tarware.tracking import PackageTracker, package_table, robot_table, status_counts, write_csv
 
 
 def make(scenario="basic", render_mode=None, **overrides) -> BatteryTarwareEnv:
@@ -48,5 +49,5 @@ __all__ = [
     "RoleSpec", "StageSpec", "Distribution", "JobSpec", "JobTaskSpec", "DemandStream", "MapSpec", "RewardSpec",
     "ObservationSpec", "ConfigError", "Coalition", "feasible_coalitions", "RULES", "GreedyCoalitionCoordinator",
     "RandomCoordinator", "run_episode", "StateView", "build_state_view", "Layout", "generate_ascii",
-    "PRIMITIVE_ACTIONS", "__version__",
+    "PRIMITIVE_ACTIONS", "PackageTracker", "package_table", "robot_table", "status_counts", "write_csv", "__version__",
 ]

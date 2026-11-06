@@ -1,6 +1,20 @@
 # Changelog
 
-## Unreleased (development: role alternatives)
+## Unreleased (development: role alternatives; package tracking)
+
+- **Package and robot tracking** (`battery_tarware.tracking`, read-only; tracking never changes a
+  run).
+  - `PackageTracker(sim).update()` after each step keeps a ledger per package and per robot.
+  - Per package: id, task, type, job, weight, rack, goal, status, current location, carriers,
+    every handler with role and join/leave ticks and reason, loaded distance, and the released,
+    first-assigned, picked, delivered and completed ticks plus drops.
+  - Package statuses: waiting, assigned, loading, in_transit, unloading, returning, dropped,
+    delivered, stored, cancelled.
+  - Per robot: total, empty and loaded distance, packages handled, current package and role,
+    battery, activity, and ticks per activity.
+  - Helpers: `package_table`, `robot_table`, `status_counts`, `write_csv`.
+  - `docs/make_tracking_demo.py` renders the map with a live package and robot board, and writes the
+    two ledgers as CSV.
 
 Not part of the 2.1.0 release. Model 2.1 rules are unchanged; configurations without
 `alternatives` (all built-in scenarios by default) run tick for tick as in 2.1.0.
