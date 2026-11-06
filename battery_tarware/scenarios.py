@@ -242,10 +242,23 @@ def get_scenario(name: str, model: str = "2.1") -> Dict[str, Any]:
         d["model"] = "2.0"
         return d
     for tt in d["task_types"]:
+        roles = []
         for role in tt["roles"]:
-            if (tt["name"], role["name"]) in ON_CELL_21.get(name, ()):
-                role["presence"] = "on_cell"
-                role.pop("radius", None)
+            if (tt["name"], role["name"]) not in ON_CELL_21.get(name, ()):
+                roles.append(role)
+                continue
+            # one picker steps onto the shelf cell (as in TA-RWARE, one picker per shelf location);
+            # a second one, if the task needs two, works from the next cell
+            n = int(role.get("count", 1))
+            roles.append(dict(role, count=1, presence="on_cell"))
+            roles[-1].pop("radius", None)
+            if n > 1:
+                extra = dict(role, name=role["name"] + "_2", count=n - 1, presence="adjacent")
+                roles.append(extra)
+                for st in tt["stages"]:
+                    if role["name"] in st["roles"]:
+                        st["roles"] = list(st["roles"]) + [extra["name"]]
+        tt["roles"] = roles
     return d
 
 

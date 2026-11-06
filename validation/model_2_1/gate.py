@@ -73,7 +73,7 @@ class Monitor:
         self.max_osc = 0
         self.violations = defaultdict(list)
         self.units = []
-        self.pairs = {}             # PROPOSED S1: frozenset(robot ids) -> ticks shared after their task let them go
+        self.pairs = {}             # PROPOSED S1: (frozenset(robot ids), cell) -> ticks shared after their task let them go
         orig = T.PIBT.step
         mon = self
 
@@ -143,13 +143,15 @@ class Monitor:
                 t = sim.tasks.get(next(iter(tids))) if len(tids) == 1 and None not in tids else None
                 crew_ok = t is not None and cell in (t.stage_cell, t.payload_cell)
                 if ok or crew_ok:
-                    pairs_now[frozenset(r.id for r in rs)] = 0
+                    pairs_now[(frozenset(r.id for r in rs), cell)] = 0
                     continue
-                # (iii) former partners (allowed last tick) still parting: at most SEPARATE ticks
+                # (iii) former partners (allowed last tick on this cell) still parting: at most SEPARATE
+                # ticks. Revised after run 6: a group counts if it is a subset of a group allowed on
+                # the same cell the tick before (a partner that leaves first does not reset it).
                 key = frozenset(r.id for r in rs)
-                prev = self.pairs.get(key)
-                if prev is not None and prev + 1 <= SEPARATE:
-                    pairs_now[key] = prev + 1
+                prev = [v for (g, c), v in self.pairs.items() if c == cell and key <= g]
+                if prev and min(prev) + 1 <= SEPARATE:
+                    pairs_now[(key, cell)] = min(prev) + 1
                     continue
                 self.violations["S1p"].append((sim.tick, cell, [r.id for r in rs]))
         self.pairs = pairs_now
