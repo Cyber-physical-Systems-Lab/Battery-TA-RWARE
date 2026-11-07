@@ -501,7 +501,7 @@ $("export").onchange = () => { const v = $("export").value; $("export").value = 
   if (v === "events.csv") return download(base + v, csv(run.events.map(([t, type, robots, task, d]) => ({tick:t, type, robots:robots.join("|"), task, ...Object.fromEntries(Object.entries(d).filter(([k]) => k !== "snapshot"))}))), "text/csv");
   const key = v.replace(".csv", ""); download(base + v, csv(run.tables?.[key] || []), "text/csv"); };
 
-DATA.runs.forEach((r, k) => { const o = document.createElement("option"); o.value = k; o.textContent = (r.meta.label || r.meta.rule || "run") + " · " + r.meta.scenario + " · seed " + r.meta.seed; $("run").appendChild(o); });
+DATA.runs.forEach((r, k) => { const o = document.createElement("option"); o.value = k; o.textContent = (r.meta.label || r.meta.rule || "run") + " · " + r.meta.scenario + " · seed " + r.meta.seed + (r.meta.model ? " · model " + r.meta.model : ""); $("run").appendChild(o); });
 $("run").onchange = () => loadRun(Number($("run").value));
 $("tick").oninput = redraw;
 for (const id of ["f_order","f_pkg","f_task","f_robot","f_coal","f_type"]) $(id).oninput = () => { const F = filters(), s = {};
