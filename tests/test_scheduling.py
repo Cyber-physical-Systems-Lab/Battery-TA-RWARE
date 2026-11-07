@@ -293,3 +293,18 @@ def test_resource_metrics_stations_and_docks():
     assert ch["sessions"] == 1 and ch["charging_ticks"] == 2 and abs(ch["occupancy"] - 2 / 3) < 1e-9
     assert abs(ch["energy_wh"] - 10.0) < 1e-6 and ch["session_ticks_mean"] == 2 and ch["stop_reasons"] == {"full": 1}
     assert r["dock_queue"] == {"robot_ticks": 1, "mean": 1 / 3, "max": 1}
+
+
+def test_deadline_reporting_counts_every_violation():
+    from battery_tarware.orders.metrics import _deadline
+    # (tick, ms, pairs, eligible, free, charging ms): 2 of 5 ticks exceed 20 ms, both decision ticks
+    rt = [[1, 1.0, 0, 0, 3, 0.1], [2, 25.0, 9, 4, 3, 0.2], [3, 2.0, 1, 1, 2, 0.1], [4, 0.5, 0, 0, 2, 0.1],
+          [5, 40.0, 12, 5, 1, 0.3]]
+    d = _deadline(rt, 20.0)
+    assert d["deadline_violations"] == 2 and d["deadline_violation_rate"] == 0.4
+    assert d["deadline_violation_rate_decision_ticks"] == 2 / 3 and d["deadline_worst_ms"] == 40.0
+    assert d["runtime_ms_decision_ticks"]["n"] == 3 and d["runtime_ms_decision_ticks"]["p99"] > 39
+    res = run_episode(order_scenario(source=SRC), "plb", 0, 200, 0, scheduler_kwargs={"deadline_ms": 0.0})
+    s = res["metrics"]["scheduling"]
+    assert s["deadline_ms"] == 0.0 and s["deadline_violation_rate"] == 1.0          # every tick > 0 ms
+    assert s["runtime_ms"]["p99"] >= s["runtime_ms"]["p95"]

@@ -48,7 +48,9 @@ growing); throughput and lead time by order kind; mean lead time by priority.
 | starving tasks | tasks whose wait for a first assignment exceeds 5 × the median latency (or is still running at `T` beyond that) |
 | decision outcomes | count of eligible-task-ticks per outcome of the decision log: `assigned`, `robot_taken` (its coalitions lost robots to higher-ranked tasks), `budget`, `infeasible:capability / payload / battery / unreachable`, `unavailable:robots_busy / charging / breakdown` |
 | feasible-unassigned share | eligible-task-ticks with ≥ 1 feasible coalition that were not assigned ÷ eligible-task-ticks |
-| runtime | scheduler wall-clock time per tick, ms (mean, P50, P95, max) |
+| runtime | scheduler wall-clock time per tick, ms (mean, P50, P95, P99, max), over all ticks and over decision ticks (`runtime_ms_decision_ticks`: ticks with at least one eligible task); also the shared charging rule alone (`charging_rule_ms`) |
+| deadline compliance | `deadline_ms` (scheduler argument, default 20 ms; a *reporting target*: the scheduler never stops early), `deadline_violations` (ticks over it), `deadline_violation_rate` (÷ all ticks), `deadline_violation_rate_decision_ticks` (÷ decision ticks), `deadline_worst_ms`. The algorithmic budget is count-based (`max_assign_per_tick` 8 commits, `coalitions_per_task` 4, `per_role_candidates` 6, one re-query), deterministic and machine-independent; wall-clock figures depend on the machine and its load |
+| eligible per tick | eligible tasks the scheduler considered per tick |
 | candidates per tick | (task, coalition) pairs evaluated per tick |
 
 ## Robot level

@@ -221,7 +221,9 @@ class TraceRecorder:
                "energy_wh": {r.name: round(r.energy_used_wh, 3) for r in sim.robots},
                "events": [[e.tick, e.type, list(e.robots), e.task, e.data] for e in sim.events.events]}
         if self.scheduler is not None:
-            out["runtime"] = [[t, round(s * 1000, 4), n] for t, s, n in self.scheduler.runtime]
+            out["runtime"] = [[r[0], round(r[1] * 1000, 4)] + list(r[2:5]) + [round(r[5] * 1000, 4)]
+                              if len(r) >= 6 else [r[0], round(r[1] * 1000, 4), r[2]] for r in self.scheduler.runtime]
+            out["meta"]["deadline_ms"] = getattr(self.scheduler, "deadline_ms", None)
         if metrics is not None:
             out["metrics"] = metrics
         if tables is not None:

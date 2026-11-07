@@ -25,6 +25,14 @@
    candidate pairs evaluated. Wall-clock compute time is kept in ``scheduler.runtime`` (not in the
    event log, which stays deterministic).
 
+**Budgets.** The *algorithmic* budget is count-based and deterministic: at most
+``max_assign_per_tick`` commits, ``coalitions_per_task`` coalitions per task and
+``per_role_candidates`` robots per role, one re-query. It bounds the work per tick independently
+of the machine. ``deadline_ms`` (default 20 ms) is a *wall-clock* evaluation target only: each tick's
+measured compute time (charging rule + assignment, ``time.perf_counter``) is compared with it and
+violations are reported (``metrics.scheduling.deadline_*``). The scheduler never stops early
+because of it, so decisions do not depend on machine speed or load.
+
 All rules see the same candidate set and the same information (current and past state only).
 Time terms use simulation ticks. Ties break by order arrival, order-layer task id, then estimated
 completion, then robot ids.
@@ -132,7 +140,7 @@ class OrderScheduler:
                  type_scores: Optional[Dict[str, float]] = None, wait_norm: int = 100,
                  zlp_weights: Tuple[float, float] = (0.8, 0.2), zone_affinity: Tuple[float, float, float] = (1.0, 0.7, 0.3),
                  plb_weights: Tuple[float, float, float] = (0.4, 0.3, 0.3), busy_window: int = 100,
-                 zones: Optional[np.ndarray] = None, log_decisions: bool = True):
+                 zones: Optional[np.ndarray] = None, log_decisions: bool = True, deadline_ms: float = 20.0):
         if rule not in RULE_NAMES:
             raise ValueError("unknown rule %r; known: %s" % (rule, RULE_NAMES))
         self.rule = rule
@@ -148,7 +156,9 @@ class OrderScheduler:
         self._zones_given = zones
         self.log_decisions = log_decisions
         self._charger = GreedyCoalitionCoordinator("fifo", charge_below=charge_below, energy_reserve=energy_reserve)
-        self.runtime: List[Tuple[int, float, int]] = []          # (tick, seconds, candidate pairs)
+        self.deadline_ms = float(deadline_ms)                    # wall-clock target, reported only
+        # per tick: (tick, seconds, candidate pairs, eligible tasks, free robots, charging-rule seconds)
+        self.runtime: List[Tuple[int, float, int, int, int, float]] = []
         self._env_id = None
 
     # ---------------------------------------------------------------- coordinator API
@@ -169,11 +179,12 @@ class OrderScheduler:
             self._busy[r.id].append(r.status in (RobotStatus.TASK, RobotStatus.CHARGE))
         t0 = time.perf_counter()
         self._charger._charging(sim)                                   # 1. shared charging rule
+        t1 = time.perf_counter()
         eligible = [t for t in sim.open_tasks() if t.joinable_roles()]   # 2. eligible set
-        n_pairs = 0
+        n_pairs, n_free = 0, 0
         if eligible:
-            n_pairs = self._assign(sim, eligible)
-        self.runtime.append((sim.tick, time.perf_counter() - t0, n_pairs))
+            n_pairs, n_free = self._assign(sim, eligible)
+        self.runtime.append((sim.tick, time.perf_counter() - t0, n_pairs, len(eligible), n_free, t1 - t0))
         return np.zeros(len(sim.robots), dtype=np.int64)
 
     # ---------------------------------------------------------------- pipeline
@@ -276,7 +287,7 @@ class OrderScheduler:
                             pairs=n_eval, assigned={str(k): list(v) for k, v in done.items()},
                             tasks=[[t.id, infos[t.id].order_task, _round(pair_score.get(t.id)), ncoal[t.id],
                                     _round(best_est.get(t.id)), status[t.id]] for t in eligible])
-        return n_eval
+        return n_eval, len(free)
 
     # ---------------------------------------------------------------- scores (smaller sorts first)
     def _scores(self, sim, pairs, infos) -> List[Tuple]:

@@ -41,7 +41,11 @@ def flatten(m: Dict) -> Dict:
         "utilization": r["utilization_mean"], "jain": r["utilization_jain"], "distance_per_delivery": y["distance_per_delivery"],
         "congestion_share": y["congestion_waiting_share"], "blocked_moves_per_1000": y["congestion_blocked_moves_per_1000_robot_ticks"],
         "assignment_latency_mean": s["assignment_latency"]["mean"], "runtime_ms_mean": s["runtime_ms"]["mean"],
-        "runtime_ms_p95": s["runtime_ms"]["p95"], "candidates_mean": s["candidates_per_tick"]["mean"],
+        "runtime_ms_p95": s["runtime_ms"]["p95"], "runtime_ms_p99": s["runtime_ms"]["p99"],
+        "runtime_ms_p50": s["runtime_ms"]["p50"], "runtime_ms_max": s["runtime_ms"]["max"],
+        "deadline_violation_rate": s.get("deadline_violation_rate"),
+        "deadline_violations": s.get("deadline_violations"),
+        "candidates_mean": s["candidates_per_tick"]["mean"],
         "charge_sessions": r["charge_sessions"], "dock_queue_ticks": r["dock_queue_ticks"], "stranded": r["stranded"],
         "retries": s["retries"], "stalls": s["stalls_suspected"], "wall_seconds": m["meta"].get("wall_seconds"),
     }

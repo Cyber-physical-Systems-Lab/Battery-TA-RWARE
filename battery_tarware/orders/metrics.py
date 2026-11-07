@@ -29,10 +29,27 @@ class _E:                                            # event view over the trace
 def _stats(x) -> Dict:
     x = [v for v in x if v is not None]
     if not x:
-        return {"n": 0, "mean": None, "p50": None, "p95": None, "max": None}
+        return {"n": 0, "mean": None, "p50": None, "p95": None, "p99": None, "max": None}
     a = np.asarray(x, dtype=float)
     return {"n": len(x), "mean": float(a.mean()), "p50": float(np.percentile(a, 50)),
-            "p95": float(np.percentile(a, 95)), "max": float(a.max())}
+            "p95": float(np.percentile(a, 95)), "p99": float(np.percentile(a, 99)), "max": float(a.max())}
+
+
+def _deadline(rt, deadline_ms) -> Dict:
+    """Wall-clock deadline compliance of the scheduler (measured; the scheduler never stops early).
+    Over all ticks and over decision ticks (at least one eligible task), so idle ticks cannot hide
+    violations; also the compute time of decision ticks and of the charging rule alone."""
+    dec = [r for r in rt if len(r) >= 4 and r[3] > 0]
+    out = {"deadline_ms": deadline_ms, "runtime_ms_decision_ticks": _stats([r[1] for r in dec]),
+           "eligible_per_tick": _stats([r[3] for r in rt if len(r) >= 4]),
+           "charging_rule_ms": _stats([r[5] for r in rt if len(r) >= 6])}
+    if deadline_ms is not None and rt:
+        v = [r for r in rt if r[1] > deadline_ms]
+        out.update({"deadline_violations": len(v), "deadline_violation_rate": len(v) / len(rt),
+                    "deadline_violation_rate_decision_ticks": (sum(1 for r in dec if r[1] > deadline_ms) / len(dec))
+                    if dec else None,
+                    "deadline_worst_ms": max(r[1] for r in rt)})
+    return out
 
 
 def _jain(x) -> Optional[float]:
@@ -136,6 +153,7 @@ def evaluate(trace: Dict, warmup: int = 0) -> Dict:
         "decisions": decisions, "decision_outcomes": dict(sorted(rejections.items())),
         "feasible_unassigned_share": (feasible_unassigned / eligible_ticks) if eligible_ticks else None,
         "runtime_ms": _stats([r[1] for r in rt]), "candidates_per_tick": _stats([r[2] for r in rt]),
+        **_deadline(rt, trace["meta"].get("deadline_ms")),
     }
 
     # ───────────────────────────── robot level
