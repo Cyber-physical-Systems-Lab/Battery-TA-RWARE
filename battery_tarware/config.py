@@ -478,7 +478,7 @@ class DemandStream:
 # ───────────────────────────────────────────────────────────── map, rewards, observations
 
 DOCK_LAYOUTS = ("inline", "bays")
-MODELS = ("2.0", "2.1")                 # simulation model versions (docs/semantics.md)
+MODELS = ("2.0", "2.1", "2.2")          # simulation model versions (docs/semantics.md); default 2.1
 
 
 @dataclass(frozen=True)
@@ -545,7 +545,8 @@ class ScenarioConfig:
     rewards: RewardSpec = field(default_factory=RewardSpec)
     observation: ObservationSpec = field(default_factory=ObservationSpec)
     description: str = ""
-    model: str = "2.1"                   # simulation model version; "2.0" reproduces model 2.0 exactly
+    model: str = "2.1"                   # simulation model version; "2.0" reproduces model 2.0 exactly,
+                                         # "2.2" adds the helper work-cell reservation (opt-in)
     orders: Optional[Mapping[str, Any]] = None   # optional order layer (battery_tarware.orders); None = off
 
     # ---- construction

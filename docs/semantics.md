@@ -1,4 +1,4 @@
-# Simulation semantics (model versions 2.0 and 2.1)
+# Simulation semantics (model versions 2.0, 2.1 and 2.2)
 
 This page is part of the public contract of Battery-TA-RWARE. Results obtained with the simulator
 depend on these rules, so **report the package version (and this model version) with every
@@ -10,6 +10,12 @@ new major version.
 operational rules in [Model 2.1](#model-21-occupancy-docking-and-waiting) below. Set `model: "2.0"`
 (and use `get_scenario(name, model="2.0")` for a built-in scenario) to reproduce model 2.0 exactly; this
 is verified tick by tick against release 2.0.0.
+
+**Model 2.2 is opt-in** (`model: "2.2"`, `get_scenario(name, model="2.2")`). It keeps every model 2.1
+rule and adds one: the [helper work-cell reservation](#model-22-helper-work-cell-reservation).
+Selecting 2.1 (the default) reproduces model 2.1 exactly; this is checked against fingerprints
+recorded before 2.2 existed (`python experiments/checks/identity.py`). Report results of 2.1 and
+2.2 separately: a difference between them is a change of the simulated warehouse, not of a policy.
 
 Version 2 is a new engine. It is **not trajectory-compatible** with TA-RWARE / Battery-TA-RWARE v1
 (git tag `legacy-v1.1.0`, branch `v1`), or with any study that ran on the v1 kernel. Its movement,
@@ -222,7 +228,37 @@ outside the step (`Simulator._target`) does not change the run.
 
 ### Validation
 
-The 2.1 rules were validated against a pre-registered behavioural gate (vertex and swap conflicts,
-dock exclusivity, no persistent no-progress or oscillation, no new stranding, exact reproduction of
-model 2.0) on all built-in scenarios and their large versions, with the outcome and every revision
-recorded in `validation/model_2_1/PREREGISTRATION.md`.
+The 2.1 rules were validated against a pre-registered behavioural gate on all built-in scenarios
+and their large versions (2026-11-06; the gate scripts and the pre-registration record are kept
+outside the published repository). Outcome of the confirmation run: model 2.0 reproduced exactly;
+no swap or dock-exclusivity violation; no new stranding; the vertex-conflict criterion *as
+registered* failed (it did not allow the intended co-location of a carrier and its crew on their
+work cell) and passed under an amended definition fixed before the confirmation run; one
+no-progress and one oscillation event, both traced to legitimate waiting behind a broken-down robot.
+The same occupancy, swap, dock, no-progress and oscillation checks are re-run for models 2.1 and 2.2
+by `experiments/model_2_2/gate.py`.
+
+## Model 2.2: helper work-cell reservation
+
+Model 2.1 keeps carriers and `on_cell` crew off a stage cell another task needs until their own
+crew is complete (*Shared work cells* above). It did not cover helpers that work from **beside**
+the stage cell (`presence: adjacent`, e.g. the second picking robot of a `large` task). Such a
+helper could choose, and wait on, a neighbouring cell that is another task's work cell. That task's
+loaded carrier then waits for the cell next to it, in the aisle, and can block the route of the
+first task's remaining crew: a hold-and-wait cycle in which no robot of either crew moves again
+(reproduced by `python experiments/checks/known_gridlock.py`).
+
+Model 2.2 adds one rule:
+
+- **Helper work-cell reservation.** A robot filling an `adjacent` role never chooses or keeps, as
+  its standing or waiting cell, a cell that is the current stage cell or payload cell of another
+  open, staffed task (its own task's stage cell excepted). If every standing cell within its radius
+  is reserved this way, it waits at a neutral staging cell nearby (*Waiting spots* above) until one
+  is free. A helper already working a stage finishes it first.
+
+Nothing else changes: no timeout, forced move or random perturbation was added, and deadlock is
+prevented by not entering the conflicting state rather than by recovering from it. The rule was
+validated with a gate whose criteria were fixed before it was run (`experiments/model_2_2/GATE.md`,
+`python experiments/model_2_2/gate.py`): occupancy, swaps and dock exclusivity as for 2.1, helper
+targets, no-progress and oscillation streaks, stranding compared with 2.1, and no suspected stall
+in the order scenarios.

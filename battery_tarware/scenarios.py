@@ -245,11 +245,13 @@ def get_scenario(name: str, model: str = "2.1", substitution: bool = False) -> D
     if name not in SCENARIOS:
         raise ConfigError("unknown scenario %r; built-in: %s" % (name, sorted(SCENARIOS)))
     if substitution and (name != "intermediate" or model == "2.0"):
-        raise ConfigError("substitution=True is defined for the intermediate scenario under model 2.1 only")
+        raise ConfigError("substitution=True is defined for the intermediate scenario under model 2.1 or later")
     d = copy.deepcopy(SCENARIOS[name])
     if model == "2.0":
         d["model"] = "2.0"
         return d
+    if model != "2.1":
+        d["model"] = model                 # 2.2: same scenario as 2.1, plus the 2.2 movement rule
     for tt in d["task_types"]:
         roles = []
         for role in tt["roles"]:

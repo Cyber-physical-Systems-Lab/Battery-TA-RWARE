@@ -19,7 +19,7 @@ Coordinates are `(row, col)`.
 | `demand` | list of [demand stream](#demand-stream) | required | where tasks come from |
 | `action_mode` | `macro` \| `primitive` | `macro` | action set |
 | `max_steps` | int | 5000 | truncation |
-| `model` | `"2.1"` \| `"2.0"` | `"2.1"` | simulation model version ([semantics](semantics.md)); `"2.0"` reproduces model 2.0 |
+| `model` | `"2.1"` \| `"2.0"` \| `"2.2"` | `"2.1"` | simulation model version ([semantics](semantics.md)); `"2.0"` reproduces model 2.0; `"2.2"` (opt-in) adds the helper work-cell reservation |
 | `seconds_per_tick` | float | 5.0 | converts power (W) to energy per tick |
 | `rewards` | [rewards](#rewards) | | |
 | `observation` | [observation](#observation) | | |

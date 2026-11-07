@@ -714,9 +714,12 @@ class Simulator:
                 if not ready:
                     return self._staging_cell(r, cell)
             alt = bool(t.type.role(r.role).alternatives)       # an alternative worked from beside the cell
-            if self.chebyshev(r.cell, cell) <= rs.radius and not (alt and r.cell == cell):
+            # model 2.2 work-cell reservation: a helper working from beside the stage cell never stands
+            # on another open task's work cell (its current stage cell or payload cell)
+            avoid = self._foreign_work_cells(t) - {cell} if self.config.model >= "2.2" else frozenset()
+            if self.chebyshev(r.cell, cell) <= rs.radius and not (alt and r.cell == cell) and r.cell not in avoid:
                 return r.cell
-            return self._nearest_standing_cell(r, cell, rs.radius, allow_center=not alt)
+            return self._nearest_standing_cell(r, cell, rs.radius, allow_center=not alt, avoid=avoid)
         if r.status == RobotStatus.IDLE and self.config.model != "2.0":
             return self._parking_target(r)                    # model 2.1: a kept, unshared parking spot
         if r.status == RobotStatus.IDLE and not self._parking(r)[r.cell]:
@@ -884,7 +887,19 @@ class Simulator:
         return sum(1 for dy, dx in MOVES if self.layout.in_bounds((cell[0] + dy, cell[1] + dx))
                    and pas[cell[0] + dy, cell[1] + dx])
 
-    def _nearest_standing_cell(self, r: Robot, center: Cell, radius: int, allow_center: bool = True) -> Cell:
+    def _foreign_work_cells(self, t: Task) -> frozenset:
+        """Model 2.2: the current stage cells and payload cells of the other open, staffed tasks."""
+        cells = set()
+        for u in self.tasks.values():
+            if u.id != t.id and not u.done and u.robots():
+                if u.stage < len(u.stage_cells):
+                    cells.add(u.stage_cells[u.stage])
+                if u.payload_cell is not None:
+                    cells.add(u.payload_cell)
+        return frozenset(cells)
+
+    def _nearest_standing_cell(self, r: Robot, center: Cell, radius: int, allow_center: bool = True,
+                               avoid: frozenset = frozenset()) -> Cell:
         """Where a helper stands next to a stage cell: the nearest candidate within ``radius`` that it
         can actually reach with stationed robots treated as obstacles (a teammate standing on a
         crossing must not cut it off), preferring cells that keep the stage cell's access free.
@@ -893,13 +908,14 @@ class Simulator:
         stationed = {o.cell for o in self.robots if o.id != r.id and self._stationed_or_helping(o)}
         keep = r.path_goal
         if keep is not None and self.chebyshev(keep, center) <= radius and keep != center \
-                and pas[keep] and keep not in stationed:
+                and pas[keep] and keep not in stationed and keep not in avoid:
             return keep
         cands = []
         for dy in range(-radius, radius + 1):
             for dx in range(-radius, radius + 1):
                 c = (center[0] + dy, center[1] + dx)
-                if not self.layout.in_bounds(c) or not pas[c] or c in stationed or (c == center and not allow_center):
+                if not self.layout.in_bounds(c) or not pas[c] or c in stationed or (c == center and not allow_center) \
+                        or c in avoid:
                     continue
                 in_the_way = (dy == 0 and dx == 0) or abs(dy) + abs(dx) == 1
                 cands.append((in_the_way, self.manhattan(r.cell, c), c))
@@ -907,7 +923,11 @@ class Simulator:
             if c == r.cell or astar(pas, r.cell, c, stationed - {c}, self.layout.directions) is not None:
                 r.path_goal = c
                 return c
-        return sorted(cands)[0][2] if cands else center
+        if cands:
+            return sorted(cands)[0][2]
+        if avoid:                                  # model 2.2: every standing cell is reserved: wait nearby
+            return self._staging_cell(r, center)
+        return center
 
     def _stationed_or_helping(self, o: Robot) -> bool:
         if self._stationed(o):
