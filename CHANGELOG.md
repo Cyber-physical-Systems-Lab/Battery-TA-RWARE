@@ -41,10 +41,10 @@
       deep links for every selection kind.
   - `evaluation`: parallel run grid (errors kept as rows) and paired bootstrap CIs.
   - Experiments: exploratory one factor at a time; confirmatory with a pre-registered protocol
-    (`76193bd`) on fresh seeds; scalability. Results are in `experiments/orders/RESULTS.md`.
+    (`76193bd`) on fresh seeds; scalability. Results are in `experiments/orders/README.md`.
   - Examples: `examples/orders.yaml`, `examples/orders_quickstart.py`.
   - Fix (`725582f`): a relocation whose shelf is away now waits instead of raising `TypeError`.
-  - Results (`experiments/orders/RESULTS.md`): 7 of 9 pre-registered hypotheses are supported.
+  - Results (`experiments/orders/README.md`): 7 of 9 pre-registered hypotheses are supported.
     - NSP beats FIFO on throughput and lead time at base load, with heavy coalitions and with tight
       batteries, and beats PLB. LWF is slower than FIFO. NSP and FIFO are equivalent when
       demand-limited.
@@ -56,7 +56,8 @@
       aisle the first task needs.
     - This happened in 2 of 1,480 evaluation runs, both under PLB.
     - The stall detector reports it, and the diagnosis names it.
-    - Reproduce: `validation/orders/known_gridlock.py`. Model 2.1 is not changed.
+    - Reproduce: `python experiments/checks/known_gridlock.py`. Model 2.1 is not changed (fixed
+      in the opt-in model 2.2, below).
 
 - **Order layer, Phase 1** (`battery_tarware.orders`; opt-in through the new `orders:` scenario
   key). Design and confirmed decisions: `docs/design/orders_and_scheduling.md`.
@@ -85,10 +86,11 @@
   - In order mode the package tracker numbers trips `M00000` and links each trip to its order, task
     and shelf.
   - Validation:
-    - `validation/orders/identity.py`: task-only runs are identical to 93658ea (22 fingerprints).
-    - `validation/orders/phase1.py`: inbound, outbound, relocation, dependencies and failure
+    - Identity check (now `experiments/checks/identity.py`): task-only runs are identical to
+      93658ea (22 fingerprints at the time).
+    - `experiments/checks/phase1.py`: inbound, outbound, relocation, dependencies and failure
       recovery; 8 gates pass on seeds 0–9.
-    - `validation/orders/stall_threshold.py`: the longest no-progress streak in successful runs
+    - `experiments/checks/stall_threshold.py`: the longest no-progress streak in successful runs
       is 39 ticks against the 100-tick threshold.
     - `tests/test_orders.py`: 27 tests.
 
@@ -133,8 +135,9 @@ Not part of the 2.1.0 release. Model 2.1 rules are unchanged; configurations wit
   - The observation vector is unchanged.
 - **No order-dependent work positions.** A robot type matching two alternatives of one role with
   different work positions is rejected at configuration time.
-- **Validation.** `validation/capability_alternatives/regress.py` on the variant, standard and large
-  maps, inline docks and bays, seeds 0-9: PASS.
+- **Validation.** A regression check on the variant, standard and large maps, inline docks and
+  bays, seeds 0-9: PASS (the script is kept outside the published repository; the properties are
+  covered by `tests/test_capability_alternatives.py`).
   - Under the model 2.1 gate thresholds: no swaps, dock violations, no-progress, oscillation or
     stranding.
   - No assisting AGV on the shelf cell or outside radius 1, and no robot in two roles of one task.
@@ -164,11 +167,12 @@ tick for tick. See [docs/semantics.md](docs/semantics.md#model-21-occupancy-dock
   (no hold-and-wait on shared work cells).
 - **Behavioural changes.** In basic, pickers now have to reach the shelf cell, which can lower
   throughput slightly against model 2.0 (by design). Baselines in the README are model 2.1 numbers.
-- **Validation.** A pre-registered behavioural gate (`validation/model_2_1/`): exact reproduction of
+- **Validation.** A pre-registered behavioural gate (scripts and record kept outside the published
+  repository; outcome summarised in `docs/semantics.md`): exact reproduction of
   model 2.0; no vertex or swap conflicts, dock exclusivity, no persistent no-progress or oscillation
   and no new stranding under model 2.1, on all built-in scenarios and their large versions. The
-  record of every run, revision and the post hoc occupancy amendment is in
-  `validation/model_2_1/PREREGISTRATION.md`.
+  record of every run, revision and the post hoc occupancy amendment was kept with the gate scripts.
+  The same checks are re-run for 2.1 and 2.2 by `experiments/model_2_2/gate.py`.
 - README animations regenerated from model 2.1.
 
 ## 2.0.0

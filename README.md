@@ -639,7 +639,7 @@ such as `#run=1&t=300&order=O00012` or `#t=900&charger=0` opens a given view.
 - `confirmatory.py`: a pre-registered protocol on fresh seeds;
 - `scalability.py`.
 
-Results and commands are in [experiments/orders/RESULTS.md](experiments/orders/RESULTS.md). The
+Results and commands are in [experiments/orders/README.md](experiments/orders/README.md). The
 pre-registered confirmatory run (20 fresh seeds, Bonferroni-corrected CIs) supports 7 of 9
 hypotheses in the basic-warehouse family:
 - NSP raises throughput over FIFO at base load (+7.9 orders per 1,000 ticks; FIFO 79.9), with
@@ -654,13 +654,16 @@ hypotheses in the basic-warehouse family:
 
 These are results for this simulator and these scenarios, not general claims about the rules.
 
-**Known limitation (model 2.1).** Model 2.1 can deadlock through hold-and-wait. A picking robot
-working from a cell next to its own task's shelf may stand on another task's work cell. That
-task's loaded AGV then waits for the cell, and the waiting crews block the aisle the first task
-still needs. This happened in 2 of 1,480 evaluation runs, both under PLB. The stall detector
-reports it, and the diagnosis names it "navigation deadlock". Reproduce it with
-`python validation/orders/known_gridlock.py`. Model 2.1 is frozen, so this is documented here rather
-than changed.
+**Known limitation of model 2.1, fixed in model 2.2.** Model 2.1 can deadlock through
+hold-and-wait. A picking robot working from a cell next to its own task's shelf may stand on another
+task's work cell. That task's loaded AGV then waits for the cell, and the waiting crews block the
+aisle the first task still needs. This happened in 2 of 1,480 evaluation runs of the first study,
+both under PLB; the stall detector reports it and the diagnosis names it "navigation deadlock".
+Model 2.1 stays frozen (and the default) so those results remain reproducible; the opt-in model 2.2
+(`model: "2.2"`) keeps such helpers off other tasks' work cells
+([semantics](docs/semantics.md#model-22-helper-work-cell-reservation)).
+`python experiments/checks/known_gridlock.py` reproduces the gridlock under 2.1 and shows that 2.2
+is free of it.
 
 The design and its modelling assumptions are in
 [docs/design/orders_and_scheduling.md](docs/design/orders_and_scheduling.md).

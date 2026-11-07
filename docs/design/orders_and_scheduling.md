@@ -16,7 +16,8 @@ scalability experiments (Phase 5). Decisions D1–D6 were confirmed by the maint
 | `run.py`, `evaluation.py`; `experiments/orders/` | episode runner, paired harness; experiments (Phase 5) |
 
 Every feature is opt-in: a scenario without the `orders:` key runs tick for tick as in 2.1.0
-(`validation/orders/identity.py`: 22 trajectory fingerprints identical to commit 93658ea).
+(`python experiments/checks/identity.py`: trajectory fingerprints identical to the reference
+recorded before model 2.2; 22 fingerprints were first checked against commit 93658ea).
 
 ## 0. What exists and what is new
 
@@ -128,7 +129,7 @@ attempt fails and is retried up to `max_dispatch_retries` (default 3) times. An 
 failed or cancelled only while its payload has not left the origin. Afterwards the task finishes
 physically, or the simulator re-recruits a crew after a drop, so the inventory stays consistent.
 
-Threshold check on successful task-only traces (`validation/orders/stall_threshold.py`, greedy
+Threshold check on successful task-only traces (`experiments/checks/stall_threshold.py`, greedy
 FIFO, 3 built-ins × 5 seeds × 3,000 ticks): longest eligible no-progress streak 9 / 16 / 39 ticks
 (basic / intermediate / advanced), no task reached 50, no report at 100.
 
@@ -237,13 +238,13 @@ hold-and-wait. The admission rule keeps *carriers* off another task's work cell 
 working from an adjacent cell. A picking robot beside its task's shelf can therefore occupy another
 task's work cell. That task's loaded AGV waits for the cell, and the waiting crews block the aisle
 the first task needs. This happened in 2 of 1,480 runs, both under PLB
-(`validation/orders/known_gridlock.py`). A fix would change trajectories, so it belongs in a model
-version change, not in this branch.
+(`experiments/checks/known_gridlock.py`). A fix changes trajectories, so it is the opt-in model
+2.2 (`docs/semantics.md`); model 2.1 and the first study's results are unchanged.
 
 ## 8. Phases
 
 1. **Done.** Entities, inventory, operations, extended lifecycle, failure detection and retries,
-   order metrics. Tests `tests/test_orders.py`; milestone `validation/orders/phase1.py` (inbound,
+   order metrics. Tests `tests/test_orders.py`; milestone `experiments/checks/phase1.py` (inbound,
    outbound, relocation, dependencies, failure recovery; 8 gates; seeds 0–9 pass); identity check.
 2. **Done.** Scheduler pipeline, nine rules + WSP-eq, decision log (`tests/test_scheduling.py`:
    hand-built case per rule, common candidate set, identical arrivals across rules).
@@ -251,7 +252,7 @@ version change, not in this branch.
    with known answers; reconstruction of the inventory from the event log).
 4. **Done.** Trace recorder and offline replay dashboard; compact kanban demo GIF.
 5. **Done.** Evaluation harness; exploratory, confirmatory and scalability experiments (results in
-   `experiments/orders/RESULTS.md`).
+   `experiments/orders/README.md`).
 
 Publication: develop on `feat/orders-scheduling`; release as 2.2.0 only after validation; RA-L code
 stays in RendeCoord.

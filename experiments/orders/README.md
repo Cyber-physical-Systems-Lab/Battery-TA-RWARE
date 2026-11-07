@@ -20,7 +20,7 @@ Scenario factors: `experiments/orders/factors.py` (basic warehouse, 6 AGVs + 3 p
   beats PLB (H4). LWF is slower than FIFO (H8). NSP and FIFO are equivalent when demand-limited (H9).
 - **H3 (PLB > FIFO) is not supported.** On one of the 20 fresh seeds (1017) PLB drove the fleet into a
   model 2.1 hold-and-wait gridlock and completed no order after warm-up (reproduce:
-  `python validation/orders/known_gridlock.py`). *Post hoc only, not a confirmatory result:* without
+  `python experiments/checks/known_gridlock.py`). *Post hoc only, not a confirmatory result:* without
   that seed PLB − FIFO = +2.5 orders/1000 ticks (95% CI [+1.1, +3.9]; 13 of 19 seeds better). The
   gridlock occurred twice in 1480 evaluation runs, both under PLB (also exploratory rate=0.05,
   seed 6), and never in the 1300 runs of the other nine rules, so it appears specific to PLB in this
