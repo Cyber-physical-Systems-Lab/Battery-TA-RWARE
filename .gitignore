@@ -112,6 +112,7 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+validation/
 
 # Translations
 *.mo
@@ -219,6 +220,6 @@ __pycache__/
 /=4.3.0/
 # Battery-TA-RWARE v2: the test suite is kept out of the published repository
 /tests/
-validation/model_2_1/out/
+validation/
 experiments/orders/results/
 orders_out/
