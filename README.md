@@ -623,10 +623,13 @@ unfinished work, and diagnoses each unsuccessful order with an evidence span
 
 **Dashboard.** `write_dashboard(traces, path)` (or `python -m battery_tarware.orders.dashboard
 trace.json -o dashboard.html`) writes one self-contained HTML file. It offers playback, the map,
-an order-task kanban, the order queue, the dependency graph, scheduler decisions, robots, packages,
-battery and backlog charts, a cause timeline, metrics, and diagnosis with jump-to-evidence. You can
+an order-task kanban, order flow (cumulative arrived and completed) and throughput charts, the order
+queue, the dependency graph, scheduler decisions, robots, packages, stations and charging docks,
+battery, a cause timeline, metrics, and diagnosis with jump-to-evidence. Click an order, task,
+robot, package, or a station, dock or shelf on the map to see its details and history; a station
+shows its deliveries, service and occupancy, and a dock its sessions, energy and occupancy. You can
 filter by run, order, package, task, robot, coalition or event, and export CSV or JSON. A deep link
-such as `#run=1&t=300&order=O00012` opens a given view.
+such as `#run=1&t=300&order=O00012` or `#t=900&charger=0` opens a given view.
 
 <p align="center"><img src="docs/img/dashboard.png" width="760" alt="Replay dashboard: map, selected order, order-task kanban"></p>
 

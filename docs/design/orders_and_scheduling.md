@@ -192,9 +192,12 @@ evidence span in the trace.
 charge, status, task, role, activity), carried/dropped shelf cells, series, and cause spans.
 `dashboard.py` writes a single self-contained HTML file from one or more traces (no server, no
 external library): playback, warehouse map, order-task kanban, order queue, dependency graph,
-scheduler decision with scores and outcomes, robot and package tables, battery and backlog charts,
-cause timeline, metrics, diagnosis with jump-to-evidence, event timeline; filters by run (policy),
-order, package, task, robot, coalition and event type; CSV/JSON export. Existing renderer, tracker
+scheduler decision with scores and outcomes, robot and package tables, stations and charging docks
+(per-resource metrics from `metrics.resources`), order-flow, throughput and battery charts (axes,
+hover read-out, click to jump), cause timeline, metrics, diagnosis with jump-to-evidence, event
+timeline; selection of orders, tasks, robots, packages, stations, docks and shelves (one delegated
+press handler, so selection works during playback); filters by run (policy), order, package, task,
+robot, coalition and event type (short IDs accepted); CSV/JSON export. Existing renderer, tracker
 boards, GIF generator and CSV exports are kept. `docs/make_orders_demo.py` writes the compact
 `docs/img/orders_kanban.gif` (committed); the 4.9 MB tracking GIF stays out of Git.
 

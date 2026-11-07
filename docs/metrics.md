@@ -74,6 +74,24 @@ per simulator task), `joint_transport_tasks` (more than one carrier), `coalition
 `congestion_waiting_share` (robot-ticks `waiting_blocked`). Scalability: scheduler runtime and wall
 time per tick by warehouse and fleet size (`experiments/orders/scalability.py`).
 
+## Resource level (stations and charging docks)
+
+`evaluate(trace)["resources"]` (`metrics.resource_metrics`), shown in the dashboard's *Stations and
+charging docks* panel and exported as `stations.csv` / `chargers.csv`.
+
+| Resource | Metric | Definition |
+|---|---|---|
+| Station (each goal cell) | `shipped`, `received` | `package_shipped` / `package_arrived` events at the cell |
+| | `deliveries_per_1000` | (shipped + received) ÷ window × 1,000 |
+| | `stage_visits`, `service_ticks_mean` | task stages whose cell is the station, completed; mean stage start → completion |
+| | `occupancy`, `occupied_ticks` | ticks with a robot on the cell ÷ ticks |
+| | `working_ticks`, `waiting_partner_ticks`, `blocked_ticks` | robot-ticks on the cell by activity |
+| Charging dock | `sessions`, `open_sessions`, `robots` | `charge_started` events; sessions still open at `T`; distinct robots |
+| | `charging_ticks`, `occupancy` | ticks with a robot charging on the dock cell; ÷ ticks |
+| | `energy_wh` | Σ (SoC at stop − SoC at start) × the robot's capacity; an open session counts to the last frame |
+| | `session_ticks_mean`, `soc_start_mean`, `soc_end_mean`, `stop_reasons` | per session |
+| Fleet | `dock_queue` | robots in the dock queue per tick (robot-ticks, mean, max); a queuing robot is not tied to one dock |
+
 ## Bottleneck decomposition and diagnosis
 
 Every tick of every open order-layer task gets exactly one **cause** (`TraceRecorder`, see the table

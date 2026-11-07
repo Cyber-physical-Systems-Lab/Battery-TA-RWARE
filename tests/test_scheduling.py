@@ -265,3 +265,31 @@ def test_paired_bootstrap_and_grid():
     assert lo == hi == 1.0
     bad = run_grid({"broken": {"name": "x"}}, ["fifo"], [0], 10, 0)
     assert bad[0]["error"] and "ConfigError" in bad[0]["error"]
+
+
+def test_resource_metrics_stations_and_docks():
+    from battery_tarware.orders.metrics import resource_metrics
+    # one station (goal 9,1) and one dock (0,1); robot 0 charges 2 ticks at the dock, robot 1 works 1 tick at the station
+    acts = ["idle", "travel_empty", "travel_loaded", "working", "waiting_partner", "waiting_blocked", "to_charger",
+            "dock_queue", "charging", "failed", "stranded"]
+    fr = [[[0, 1, 0.20, 0, -1, -1, 8], [9, 1, 1.0, 1, 3, 0, 3]],
+          [[0, 1, 0.30, 0, -1, -1, 8], [9, 2, 1.0, 1, 3, 0, 1]],
+          [[0, 2, 0.30, 0, -1, -1, 1], [5, 5, 1.0, 0, -1, -1, 7]]]
+    ev = [[1, "charge_started", [0], None, {"charger": 0, "soc": 0.2}],
+          [1, "stage_started", [1], 3, {"stage": "deliver"}],
+          [2, "stage_completed", [1], 3, {"stage": "deliver"}],
+          [2, "inventory", [], None, {"op": "package_shipped", "package_id": "P1", "cell": [9, 1]}],
+          [3, "charge_stopped", [0], None, {"charger": 0, "soc": 0.3, "reason": "full"}]]
+    tr = {"meta": {"first_tick": 1, "ticks": 3, "activities": acts, "zones": {"goal": [[9, 1]]},
+                   "chargers": [{"id": 0, "cell": [0, 1], "type": "standard", "power_w": 1000.0}],
+                   "robots": [{"name": "a", "capacity_wh": 100.0}, {"name": "b", "capacity_wh": 50.0}]},
+          "frames": fr, "events": ev,
+          "sim_tasks": {"3": {"stages": [["pick", [4, 4]], ["deliver", [9, 1]], ["return", [4, 4]]]}}}
+    r = resource_metrics(tr)
+    st, ch = r["stations"][0], r["chargers"][0]
+    assert st["shipped"] == 1 and st["received"] == 0 and st["stage_visits"] == 1 and st["service_ticks_mean"] == 1
+    assert st["occupied_ticks"] == 1 and st["working_ticks"] == 1 and st["robots"] == 1
+    assert abs(st["deliveries_per_1000"] - 1000.0 / 3) < 1e-9
+    assert ch["sessions"] == 1 and ch["charging_ticks"] == 2 and abs(ch["occupancy"] - 2 / 3) < 1e-9
+    assert abs(ch["energy_wh"] - 10.0) < 1e-6 and ch["session_ticks_mean"] == 2 and ch["stop_reasons"] == {"full": 1}
+    assert r["dock_queue"] == {"robot_ticks": 1, "mean": 1 / 3, "max": 1}

@@ -224,7 +224,135 @@ def evaluate(trace: Dict, warmup: int = 0) -> Dict:
         "coalition_waiting_ratio": out["coalition"]["waiting_ratio"],
         "unfinished_orders": o["unfinished"], "unfinished_age_mean": o["unfinished_age_mean"],
     }
+    out["resources"] = resource_metrics(trace, warmup)
     return out
+
+
+def resource_metrics(trace: Dict, warmup: int = 0) -> Dict:
+    """Per-resource metrics: every station (goal cell) and every charging dock, plus the fleet's dock queue.
+
+    Station (goal cell): packages shipped there (outbound) and arriving there (inbound), task stages
+    completed there and their service time (stage start -> completion), robot-ticks on the cell by
+    activity (working, waiting for a partner, blocked) and occupancy (ticks with a robot on it / ticks).
+    Charger: sessions (``charge_started``), robots served, charging ticks (a robot on the dock cell
+    with activity ``charging``), occupancy, energy delivered (state-of-charge gain × capacity per
+    session; a session still open at the end counts to the last frame), mean session length, SoC at
+    start and end, stop reasons. The dock queue is fleet-wide (a queuing robot is not tied to one dock).
+    """
+    meta = trace["meta"]
+    frames = trace["frames"]
+    t0, n = meta["first_tick"], meta["ticks"]
+    T = t0 + n - 1
+    window = max(1, T - warmup)
+    acts = list(meta.get("activities") or ACTIVITIES)
+    A = {a: k for k, a in enumerate(acts)}
+    robots = meta["robots"]
+    goals = [tuple(c) for c in (meta.get("zones") or {}).get("goal", [])]
+    chargers = meta.get("chargers") or []
+    st = {c: {"cell": list(c), "shipped": 0, "received": 0, "stage_visits": 0, "service": [], "occupied_ticks": 0,
+              "working_ticks": 0, "waiting_partner_ticks": 0, "blocked_ticks": 0, "robots": set()} for c in goals}
+    ch = {c["id"]: {"id": c["id"], "cell": list(c["cell"]), "type": c.get("type"), "power_w": c.get("power_w"),
+                    "sessions": 0, "robots": set(), "charging_ticks": 0, "energy_wh": 0.0, "session_ticks": [],
+                    "soc_start": [], "soc_end": [], "stop_reasons": {}, "open_sessions": 0} for c in chargers}
+    ch_cell = {tuple(c["cell"]): c["id"] for c in chargers}
+
+    # robot-ticks on each resource cell
+    q_len = []
+    for fr in frames:
+        q = 0
+        for i, r in enumerate(fr):
+            cell, a = (r[0], r[1]), r[6]
+            if a == A.get("dock_queue"):
+                q += 1
+            s = st.get(cell)
+            if s is not None:
+                s["occupied_ticks"] += 1
+                s["robots"].add(robots[i]["name"])
+                if a == A.get("working"):
+                    s["working_ticks"] += 1
+                elif a == A.get("waiting_partner"):
+                    s["waiting_partner_ticks"] += 1
+                elif a == A.get("waiting_blocked"):
+                    s["blocked_ticks"] += 1
+            c = ch_cell.get(cell)
+            if c is not None and a == A.get("charging"):
+                ch[c]["charging_ticks"] += 1
+        q_len.append(q)
+
+    # events: deliveries at stations, stage service at stations, charge sessions
+    stages = {int(k): v.get("stages") or [] for k, v in (trace.get("sim_tasks") or {}).items()}
+    next_stage: Dict[int, int] = {}
+    started: Dict = {}
+    open_ch: Dict[int, tuple] = {}
+    for e in trace["events"]:
+        tick, typ, rob, task, d = e[0], e[1], e[2], e[3], e[4]
+        if typ == "inventory" and d.get("op") in ("package_shipped", "package_arrived") and d.get("cell") is not None:
+            s = st.get(tuple(d["cell"]))
+            if s is not None:
+                s["shipped" if d["op"] == "package_shipped" else "received"] += 1
+        elif typ in ("stage_started", "stage_completed") and task is not None and task in stages:
+            sl = stages[task]
+            k = next_stage.get(task, 0)
+            while k < len(sl) and sl[k][0] != d.get("stage"):
+                k += 1
+            if k >= len(sl):
+                continue
+            cell = tuple(sl[k][1])
+            if typ == "stage_started":
+                started[task] = tick
+            else:
+                next_stage[task] = k + 1
+                s = st.get(cell)
+                if s is not None:
+                    s["stage_visits"] += 1
+                    if task in started:
+                        s["service"].append(tick - started[task])
+        elif typ == "charge_started" and d.get("charger") in ch:
+            c = ch[d["charger"]]
+            c["sessions"] += 1
+            c["robots"].add(robots[rob[0]]["name"])
+            c["soc_start"].append(d.get("soc"))
+            open_ch[rob[0]] = (d["charger"], tick, d.get("soc"))
+        elif typ == "charge_stopped" and rob and rob[0] in open_ch:
+            cid, ts, s0 = open_ch.pop(rob[0])
+            c = ch[cid]
+            c["session_ticks"].append(tick - ts)
+            c["soc_end"].append(d.get("soc"))
+            c["stop_reasons"][str(d.get("reason"))] = c["stop_reasons"].get(str(d.get("reason")), 0) + 1
+            if s0 is not None and d.get("soc") is not None:
+                c["energy_wh"] += max(0.0, d["soc"] - s0) * float(robots[rob[0]].get("capacity_wh") or 0.0)
+    for ri, (cid, ts, s0) in open_ch.items():               # still charging at the end of the record
+        c = ch[cid]
+        c["open_sessions"] += 1
+        c["session_ticks"].append(T - ts)
+        s1 = frames[-1][ri][2] if frames else s0
+        c["soc_end"].append(s1)
+        if s0 is not None and s1 is not None:
+            c["energy_wh"] += max(0.0, s1 - s0) * float(robots[ri].get("capacity_wh") or 0.0)
+
+    def mean(x):
+        x = [v for v in x if v is not None]
+        return float(np.mean(x)) if x else None
+
+    stations = []
+    for c, s in st.items():
+        stations.append({"station": "G%d_%d" % c, "cell": s["cell"], "shipped": s["shipped"], "received": s["received"],
+                         "deliveries_per_1000": 1000.0 * (s["shipped"] + s["received"]) / window,
+                         "stage_visits": s["stage_visits"], "service_ticks_mean": mean(s["service"]),
+                         "occupied_ticks": s["occupied_ticks"], "occupancy": s["occupied_ticks"] / max(1, n),
+                         "working_ticks": s["working_ticks"], "waiting_partner_ticks": s["waiting_partner_ticks"],
+                         "blocked_ticks": s["blocked_ticks"], "robots": len(s["robots"])})
+    docks = []
+    for c in ch.values():
+        docks.append({"charger": c["id"], "cell": c["cell"], "type": c["type"], "power_w": c["power_w"],
+                      "sessions": c["sessions"], "open_sessions": c["open_sessions"], "robots": len(c["robots"]),
+                      "charging_ticks": c["charging_ticks"], "occupancy": c["charging_ticks"] / max(1, n),
+                      "energy_wh": round(c["energy_wh"], 3), "session_ticks_mean": mean(c["session_ticks"]),
+                      "soc_start_mean": mean(c["soc_start"]), "soc_end_mean": mean(c["soc_end"]),
+                      "stop_reasons": c["stop_reasons"]})
+    return {"stations": stations, "chargers": docks,
+            "dock_queue": {"robot_ticks": int(sum(q_len)), "mean": mean(q_len) if q_len else None,
+                           "max": int(max(q_len)) if q_len else 0}}
 
 
 NON_PROGRESS = [c for c in CAUSES if c not in ("travel", "execution")]

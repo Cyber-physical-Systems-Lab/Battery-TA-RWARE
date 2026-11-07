@@ -23,6 +23,22 @@
       timeline, metrics, diagnosis, events.
     - Filters, CSV/JSON export and deep links.
   - `docs/img/orders_kanban.gif` (1.9 MB) and `docs/img/dashboard.png`.
+  - Dashboard follow-up (user feedback):
+    - Selection works during playback. Clicks were lost because panels are re-rendered every frame
+      (press landed on a destroyed element); now one delegated `pointerdown` handler.
+    - Stations, charging docks and shelves are selectable (map, with click-again cycling on shared
+      cells, or the new *Stations and charging docks* table). Per-resource metrics
+      (`metrics.resource_metrics`, `evaluate(...)["resources"]`): station deliveries, stage service
+      time, occupancy by activity; dock sessions, energy, occupancy, SoC in/out, stop reasons;
+      fleet dock queue. Exports `stations.csv` / `chargers.csv`.
+    - Order selection shows the order's tasks with their current states, its events and the
+      dependency graph; its cards stay visible and highlighted on the kanban, its crews on the map.
+    - Charts redone: order flow (cumulative arrived / completed, band = in progress), throughput per
+      bucket (orders completed, packages shipped / stored, arrivals), battery with fleet mean and the
+      selected robot; axes, legends, hover read-out, click to jump. The old backlog chart showed
+      only a cumulative staircase without axes.
+    - Filters accept short IDs (`12` → `O00012`) and mark unknown IDs; *clear selection* button;
+      deep links for every selection kind.
   - `evaluation`: parallel run grid (errors kept as rows) and paired bootstrap CIs.
   - Experiments: exploratory one factor at a time; confirmatory with a pre-registered protocol
     (`76193bd`) on fresh seeds; scalability. Results are in `experiments/orders/RESULTS.md`.
