@@ -32,7 +32,7 @@ from battery_tarware.navigation import astar
 from battery_tarware.orders.inventory import Inventory, InventoryError
 from battery_tarware.orders.lifecycle import FROM_SIM, OTaskState, check_transition
 from battery_tarware.orders.monitor import ProgressMonitor
-from battery_tarware.orders.spec import OrderSpec, handoff_stage
+from battery_tarware.orders.spec import COMPOUND, OrderSpec, handoff_stage
 from battery_tarware.tasks.graph import TaskGraph, TaskGraphError
 
 Cell = Tuple[int, int]
@@ -249,24 +249,53 @@ class OrderManager:
             d["due"] = due
         draws = [(float(rng.random()), float(rng.random()), self.spec.inventory.package_weight.sample(rng))
                  for _ in range(lines)]
-        cells = self.stations.get(kind, [])
+        chain = src.sequence > 0 and float(rng.random()) < src.sequence     # drawn only if configured
+        out_cells = self.stations.get("outbound", [])
+        cells = self.stations.get(COMPOUND[kind][0] if kind in COMPOUND else kind, [])
         if kind == "outbound":
             cands = sorted((p.package_id for p in inv.stored_packages()))
-        elif kind == "relocation":
+        elif kind in ("relocation", "replenish"):
             taken = {t.shelf_id for t in self.tasks.values() if t.op == "relocation" and not t.terminal}
             cands = sorted(s.shelf_id for s in inv.shelves.values()
-                           if s.status == "stored" and s.busy_task is None and s.shelf_id not in taken)
-        tasks = []
-        for u, v, wt in draws:
+                           if s.status == "stored" and s.busy_task is None and s.shelf_id not in taken
+                           and (kind == "relocation" or any(inv.packages[p].status == "stored"
+                                                            and inv.packages[p].reserved_by is None
+                                                            for p in s.packages)))
+        tasks, ends = [], []                                 # ends: (first key, last key) of each line
+        for i, (u, v, wt) in enumerate(draws):
             st = list(cells[int(v * len(cells))]) if cells else None
             if kind == "inbound":
-                tasks.append({"op": "inbound", "weight_kg": wt, "station": st})
+                k = "t%d" % len(tasks)                     # the key an unkeyed task would get
+                tasks.append({"key": k, "op": "inbound", "weight_kg": wt, "station": st})
+                ends.append((k, k))
+                continue
+            if kind == "cross_dock":
+                so = list(out_cells[int(v * len(out_cells))]) if out_cells else None
+                tasks += [{"key": "in%d" % i, "op": "inbound", "weight_kg": wt, "station": st},
+                          {"key": "out%d" % i, "op": "outbound", "package": "@in%d" % i, "depends_on": ["in%d" % i],
+                           **({"station": so} if so else {})}]
+                ends.append(("in%d" % i, "out%d" % i))
                 continue
             if not cands:
                 continue
             pick = cands.pop(int(u * len(cands)))
-            tasks.append({"op": kind, ("package" if kind == "outbound" else "shelf"): pick,
+            if kind == "replenish":
+                so = list(out_cells[int(v * len(out_cells))]) if out_cells else None
+                pkg = sorted(p for p in inv.shelves[pick].packages
+                             if inv.packages[p].status == "stored" and inv.packages[p].reserved_by is None)[0]
+                tasks += [{"key": "rel%d" % i, "op": "relocation", "shelf": pick},
+                          {"key": "out%d" % i, "op": "outbound", "package": pkg, "depends_on": ["rel%d" % i],
+                           **({"station": so} if so else {})}]
+                ends.append(("rel%d" % i, "out%d" % i))
+                continue
+            k = "t%d" % len(tasks)
+            tasks.append({"key": k, "op": kind, ("package" if kind == "outbound" else "shelf"): pick,
                           **({"station": st} if st else {})})
+            ends.append((k, k))
+        if chain:                                            # line i starts after line i-1 has finished
+            first = {t["key"]: t for t in tasks}
+            for (_, prev_last), (nxt_first, _) in zip(ends, ends[1:]):
+                first[nxt_first]["depends_on"] = list(first[nxt_first].get("depends_on", [])) + [prev_last]
         d["tasks"] = tasks
         return d
 

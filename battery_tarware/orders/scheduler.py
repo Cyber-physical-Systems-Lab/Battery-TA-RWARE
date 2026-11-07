@@ -200,6 +200,11 @@ class OrderScheduler:
             if have + sum(best[:roles[cr]]) + 1e-9 < t.weight_kg:
                 return "infeasible:payload"
         fr = [sim.robots[i] for i in free]
+        if cr in roles:                      # the carriers strong enough for the load are all busy
+            have = sum(sim.robots[i].spec.payload_kg for i in t.assigned.get(cr, []))
+            best_free = sorted((r.spec.payload_kg for r in fr if fits(r, cr)), reverse=True)
+            if have + sum(best_free[:roles[cr]]) + 1e-9 < t.weight_kg:
+                fr = [r for r in fr if not fits(r, cr)]          # report why the heavy carriers are away
         if not _staffable(fr, roles, fits):
             busy = [r for r in sim.robots if r.id not in free and any(fits(r, role) for role in roles)]
             charging = sum(r.status == RobotStatus.CHARGE for r in busy)

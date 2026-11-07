@@ -7,7 +7,11 @@
         relocation: {task_types: [{task_type: relocate}]}
       inventory:  {shelf_fill: 0.85, package_fill: 0.6, slot_capacity: 1, package_weight: {...}, shelf_kg: 0}
       source:     {kind: poisson, rate: 0.02, mix: {outbound: 0.6, inbound: 0.3, relocation: 0.1},
-                   max_orders: 200, lines: 1, priority: 1, due_after: {kind: uniform, low: 300, high: 600}}
+                   max_orders: 200, lines: 1, priority: 1, due_after: {kind: uniform, low: 300, high: 600},
+                  sequence: 0.0}
+                  # mix may also name compound orders: cross_dock (per line: inbound, then outbound of
+                  # that package) and replenish (per line: relocate a shelf, then outbound of one of
+                  # its packages); with probability ``sequence`` a multi-line order's lines form a chain
                   # or {kind: trace, orders: [...]} or {kind: none} (orders only through OrderManager.submit)
       lifecycle:  {stall_ticks: 100, max_dispatch_retries: 3, retry_delay: 10, auto_retry: false}
       slotting: nearest
@@ -33,6 +37,9 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 from battery_tarware.config import ConfigError, Distribution, _check
 
 OPERATIONS = ("outbound", "inbound", "relocation")
+# generated compound orders (poisson ``mix`` keys): a dependency pair per line
+COMPOUND = {"cross_dock": ("inbound", "outbound"),        # receive a package, then ship that package
+            "replenish": ("relocation", "outbound")}      # move a shelf, then pick a package from it
 SOURCE_KINDS = ("poisson", "trace", "none")
 SLOTTING = ("nearest", "first_free")
 
@@ -75,6 +82,7 @@ class SourceSpec:
     priority: Distribution = field(default_factory=lambda: Distribution("fixed", value=1.0))
     due_after: Optional[Distribution] = None       # ticks after arrival; None = no due date
     orders: Tuple[Mapping[str, Any], ...] = ()     # trace
+    sequence: float = 0.0                          # poisson: probability a multi-line order is a chain
 
 
 @dataclass(frozen=True)
@@ -150,8 +158,12 @@ class OrderSpec:
         if source.kind == "poisson":
             _check(source.rate >= 0, "%s.source.rate must be >= 0" % w)
             _check(source.mix and sum(source.mix.values()) > 0, "%s.source.mix needs positive weights" % w)
-            bad = sorted(set(source.mix) - set(ops))
+            need = set()
+            for k in source.mix:
+                need.update(COMPOUND.get(k, (k,)))
+            bad = sorted(need - set(ops))
             _check(not bad, "%s.source.mix: operation(s) %s are not configured" % (w, bad))
+            _check(0.0 <= source.sequence <= 1.0, "%s.source.sequence must be in [0, 1]" % w)
         for i, o in enumerate(source.orders):
             _keys(o, ORDER_KEYS, "%s.source.orders[%d]" % (w, i))
             for j, t in enumerate(o.get("tasks", ())):
