@@ -254,5 +254,11 @@ the first task needs. This happened in 2 of 1,480 runs, both under PLB
 5. **Done.** Evaluation harness; exploratory, confirmatory and scalability experiments (results in
    `experiments/orders/README.md`).
 
+6. **Done.** Extension: model 2.2 (helper work-cell reservation; gate `experiments/model_2_2/`),
+   order scenarios on the intermediate and advanced warehouses with role alternatives, compound
+   and sequenced orders, scheduler P99 and wall-clock deadline reporting, automated browser tests
+   of the dashboard, 18,000-tick stress runs, tracked checks in `experiments/checks/`, and a second
+   pre-registered evaluation (`experiments/orders_v2/`).
+
 Publication: develop on `feat/orders-scheduling`; release as 2.2.0 only after validation; RA-L code
 stays in RendeCoord.

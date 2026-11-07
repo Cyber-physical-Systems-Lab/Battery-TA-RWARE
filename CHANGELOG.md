@@ -2,6 +2,25 @@
 
 ## Unreleased (development: role alternatives; package tracking; order layer)
 
+- **Model 2.2 (opt-in) and the second order-scheduling evaluation.**
+  - Model 2.2: a robot working from beside a stage cell never chooses, keeps or waits on another
+    open, staffed task's work cell (removes the model 2.1 hold-and-wait gridlock). Default stays
+    2.1; 2.0/2.1 trajectories are unchanged (`experiments/checks/identity.py`, 31 fingerprints).
+    Gate (`experiments/model_2_2/RESULT.md`): all criteria pass except L2 (7 alternation events,
+    5 also under 2.1), reported as failed.
+  - Order scenarios on the intermediate and advanced warehouses (role alternatives, joint
+    transport, three-type crews with a QC stage, forklifts, breakdowns); compound orders
+    (`cross_dock`, `replenish`) and chained lines (`source.sequence`).
+  - Scheduler: P99 runtime, a wall-clock `deadline_ms` reporting target (default 20 ms; never
+    stops the scheduler), violations over all and decision ticks; diagnosis label fix (busy heavy
+    carriers were reported as `infeasible:unreachable`).
+  - Dashboard: automated headless-browser tests against the event log (`tests/test_dashboard_browser.py`);
+    model version in the run selector.
+  - Tracked checks replace the ignored `validation/` scripts (`experiments/checks/`).
+  - Second evaluation (`experiments/orders_v2/README.md`): exploratory seeds 2000-2009 (2900 runs),
+    pre-registered protocol (6e2a2d4), confirmatory seeds 3000-3019: 11 of 13 hypotheses
+    supported; 36 stress runs of 18,000 ticks pass all checks; runtime S-XL.
+
 - **Order scheduling, metrics, dashboard and evaluation** (Phases 2–5; `battery_tarware.orders`,
   `experiments/orders/`).
   - `OrderScheduler(rule)`: one pipeline for every rule.

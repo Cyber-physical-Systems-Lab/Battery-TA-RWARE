@@ -598,6 +598,14 @@ write_dashboard([res["trace"]], "dashboard.html")  # offline replay, open in a b
 or `python examples/orders_quickstart.py examples/orders.yaml fifo` (a scripted trace with inbound,
 outbound, relocation and a three-task dependent order).
 
+`order_scenario(base=...)` puts orders on all three built-in warehouses, with the operation's crew
+chosen by shelf weight: `basic` (AGV alone, with one or two picking robots), `intermediate` (tote and
+pallet AGVs, a support role filled by a picking robot on the shelf cell *or* a tote AGV beside it,
+two-carrier joint transport, fast/slow docks) and `advanced` (AGV + mobile manipulator + inventory
+drone with a quality-check stage, forklifts, inbound at the receiving zone, breakdowns). Generated
+orders can be compound (`cross_dock`: receive, then ship that package; `replenish`: relocate a
+shelf, then pick from it) and multi-line orders can be chained (`source.sequence`).
+
 **Scheduling.** `OrderScheduler(rule)` runs one pipeline for every rule: the shared charging rule;
 the eligible set; feasible coalitions from the simulator (capabilities, role alternatives, payload,
 reachability, 15% battery reserve), with a reason for each infeasible task; then ranking and atomic
@@ -653,6 +661,17 @@ hypotheses in the basic-warehouse family:
   ablation.
 
 These are results for this simulator and these scenarios, not general claims about the rules.
+
+**Second evaluation (model 2.2, expanded warehouses).** A separate pre-registered study on new seeds
+([experiments/orders_v2/README.md](experiments/orders_v2/README.md)) supports 11 of 13 hypotheses:
+NSP's advantage over FIFO holds under model 2.2 and generalizes to the intermediate and advanced
+warehouses and to large dependency graphs, but is much smaller there (+1.0 to +1.2 orders per 1,000
+ticks against +7.7 in the basic family; lead time still 17-21% shorter); without role alternatives
+the throughput gain is not confirmed. With model 2.2, PLB beats FIFO (+1.9). Model 2.2 and 2.1 give
+equivalent throughput outside the gridlock. 18,000-tick stress runs pass every inventory and
+event-log check; under overload, the pair rules leave some orders waiting far longer than FIFO.
+The scheduler meets a 20 ms per-tick target up to 36 robots except for PLB, and misses it on most
+ticks with 72 robots.
 
 **Known limitation of model 2.1, fixed in model 2.2.** Model 2.1 can deadlock through
 hold-and-wait. A picking robot working from a cell next to its own task's shelf may stand on another
