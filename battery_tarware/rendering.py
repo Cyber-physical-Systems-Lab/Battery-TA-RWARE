@@ -37,9 +37,9 @@ SHELF_REQUESTED: Color = (0, 128, 128)  # payload waiting to be picked / task ce
 SHELF_TARGET: Color = (200, 100, 200)   # the goal a carried payload is delivered to (frame)
 SHELF_RETURN: Color = (230, 140, 30)    # the shelf slot a carried payload is returned to (frame)
 GOAL_COLORS: Dict[str, Color] = {
-    "pickup": (150, 190, 235), "stage": (150, 190, 235), "help": (150, 190, 235),
-    "deliver": (200, 100, 200), "return": (230, 140, 30),
-    "charge": (120, 200, 120), "queue": (150, 90, 200), "park": (190, 190, 190),
+    "pickup": (30, 110, 220), "stage": (30, 110, 220), "help": (30, 110, 220),
+    "deliver": (170, 50, 170), "return": (230, 120, 0),
+    "charge": (30, 160, 60), "queue": (120, 60, 190), "park": (150, 150, 150),
 }
 
 STATUS_COLORS: Dict[str, Color] = {
@@ -177,12 +177,15 @@ def rgb_array(sim, cell_px: int = 30, crew_lines: bool = True) -> np.ndarray:
             _frame(img, *box(t.stage_cell), SHELF_TARGET if t.stage_spec.at == "destination" else SHELF_RETURN,
                    w=max(2, cell_px // 10))
 
-    # goal lines: every robot that is going somewhere gets a thin line to its goal, coloured by why
+    # goal lines: every robot that is going somewhere gets a line to its goal, coloured by why
     if crew_lines:
         for r in sim.robots:
             goal, kind = sim.goal_of(r)
             if goal is not None and goal != r.cell:
-                _line(img, center(r.cell), center(goal), GOAL_COLORS.get(kind, GOAL_COLORS["stage"]), width=1)
+                col = GOAL_COLORS.get(kind, GOAL_COLORS["stage"])
+                _line(img, center(r.cell), center(goal), col, width=2)
+                gx, gy = center(goal)                                  # a dot marks the goal end
+                _rect(img, round(gx - 3), round(gy - 3), round(gx + 3), round(gy + 3), col)
 
     # robots: carried payload underneath, polygon by type, colour by activity, heading, battery
     by_cell: Dict[Tuple[int, int], List] = {}
@@ -225,7 +228,7 @@ def rgb_array(sim, cell_px: int = 30, crew_lines: bool = True) -> np.ndarray:
 
 def legend(sim) -> Dict[str, list]:
     """What the image encodes, for drawing a legend: robot types (name, sides, count), activities
-    (name, colour) and cells (name, colour)."""
+    (name, colour), cells (name, colour) and goal-line colours (name, colour)."""
     types = [(name, type_sides(i), sum(r.type_index == i for r in sim.robots))
              for i, name in enumerate(sim.type_names)]
     custom = [z for z in sim.layout.zones if z not in ZONE_COLORS and z not in ("aisle", "storage")]
@@ -233,7 +236,11 @@ def legend(sim) -> Dict[str, list]:
              ("return slot", SHELF_RETURN)]
     cells += [(z, ZONE_COLORS[z]) for z in ("goal", "dock")]
     cells += [(z, CUSTOM_COLORS[i % len(CUSTOM_COLORS)]) for i, z in enumerate(custom)]
-    return {"types": [t for t in types if t[2]], "activities": list(STATUS_COLORS.items()), "cells": cells}
+    goals = [("pickup / work cell", GOAL_COLORS["pickup"]), ("delivery goal", GOAL_COLORS["deliver"]),
+             ("return slot", GOAL_COLORS["return"]), ("charger", GOAL_COLORS["charge"]),
+             ("waiting spot", GOAL_COLORS["queue"]), ("parking spot", GOAL_COLORS["park"])]
+    return {"types": [t for t in types if t[2]], "activities": list(STATUS_COLORS.items()), "cells": cells,
+            "goals": goals}
 
 
 def ansi(sim) -> str:
