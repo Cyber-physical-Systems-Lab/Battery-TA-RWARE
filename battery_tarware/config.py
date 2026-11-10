@@ -478,7 +478,7 @@ class DemandStream:
 # ───────────────────────────────────────────────────────────── map, rewards, observations
 
 DOCK_LAYOUTS = ("inline", "bays")
-MODELS = ("2.0", "2.1", "2.2")          # simulation model versions (docs/semantics.md); default 2.1
+MODELS = ("2.0", "2.1", "2.2", "2.3")   # simulation model versions (docs/semantics.md); default 2.1
 
 
 @dataclass(frozen=True)
@@ -546,7 +546,8 @@ class ScenarioConfig:
     observation: ObservationSpec = field(default_factory=ObservationSpec)
     description: str = ""
     model: str = "2.1"                   # simulation model version; "2.0" reproduces model 2.0 exactly,
-                                         # "2.2" adds the helper work-cell reservation (opt-in)
+                                         # "2.2" adds the helper work-cell reservation (opt-in);
+                                         # "2.3" adds picker-assisted loading and two-cell convoys (opt-in)
     orders: Optional[Mapping[str, Any]] = None   # optional order layer (battery_tarware.orders); None = off
 
     # ---- construction
@@ -673,6 +674,11 @@ class ScenarioConfig:
     def validate(self) -> None:
         self.map.validate()
         _check(self.model in MODELS, "model must be one of %s" % (MODELS,))
+        if self.model >= "2.3" and self.action_mode == "macro":
+            for tt in self.task_types:
+                if tt.carrier_role is not None:
+                    _check(tt.role(tt.carrier_role).count <= 2,
+                           "task type %r: model 2.3 supports one or two carriers (a convoy of two)" % tt.name)
         zones = self.zones
         _check(len(self.robot_types) > 0, "scenario needs robot_types")
         names = [r.name for r in self.robot_types]

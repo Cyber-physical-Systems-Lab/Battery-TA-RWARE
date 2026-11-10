@@ -31,7 +31,7 @@ def test_model_versions():
     cfg = bt.get_scenario("intermediate", model="2.2", substitution=True)
     assert cfg["model"] == "2.2"
     bad = bt.get_scenario("basic")
-    bad["model"] = "2.3"
+    bad["model"] = "2.4"
     with pytest.raises(ConfigError):
         bt.ScenarioConfig.from_dict(bad)
 

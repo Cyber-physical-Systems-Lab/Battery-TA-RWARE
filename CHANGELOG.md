@@ -2,6 +2,17 @@
 
 ## Unreleased (development: role alternatives; package tracking; order layer)
 
+- **Model 2.3 (opt-in): picker-assisted loading, two-cell convoys, goal lines.** See
+  [docs/semantics.md](docs/semantics.md#model-23-opt-in-pickers-on-every-pick-two-cell-convoys-goals-and-waiting).
+  - Every pick and return involves a picker (`solo` in basic and `tote` in intermediate get one; the
+    `oversize` spotter stands on the shelf cell).
+  - Joint carriers form a rigid two-cell convoy (leader on the shelf slot or goal, follower on the
+    free-way cell) with rigid-pair PIBT moves; macro mode only, at most two carriers.
+  - Rendering: a goal line for every moving robot, delivery goals framed apart from return slots, and a
+    `blocked` state apart from `waiting`; `Simulator.goal_of` and `Simulator.wait_reason`.
+  - 2.0-2.2 are unchanged: 31/31 identity fingerprints, and six model-2.2 runs hash-identical to
+    the commit before this change. Tests: `tests/test_model_2_3.py`.
+
 - **Model 2.2 (opt-in) and the second order-scheduling evaluation.**
   - Model 2.2: a robot working from beside a stage cell never chooses, keeps or waits on another
     open, staffed task's work cell (removes the model 2.1 hold-and-wait gridlock). Default stays

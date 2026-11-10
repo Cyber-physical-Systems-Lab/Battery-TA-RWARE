@@ -232,6 +232,22 @@ ON_CELL_21 = {"basic": {("standard", "picker"), ("large", "picker")},
               "intermediate": {("case", "picker"), ("pallet", "picker")}}
 
 
+# Model 2.3: loading a tote onto an AGV and putting it back always involves a picking robot. The
+# retrieval task types that have no picker in 2.0-2.2 get one, standing on the shelf cell.
+PICKER_ALWAYS_23 = {"basic": {"solo"}, "intermediate": {"tote"}}
+# ... and the spotter of a two-AGV lift loads from the shelf cell too, like every other picker
+ON_CELL_23 = {"intermediate": {("oversize", "spotter")}}
+
+
+def _add_picker(tt: Dict[str, Any]) -> None:
+    if any(r.get("capability") == "pick" for r in tt["roles"]):
+        return
+    tt["roles"] = list(tt["roles"]) + [{"name": "picker", "capability": "pick", "presence": "on_cell"}]
+    for st in tt["stages"]:
+        if st["at"] == "origin" and tt["carrier_role"] in st["roles"]:        # the pick and the return
+            st["roles"] = list(st["roles"]) + ["picker"]
+
+
 def get_scenario(name: str, model: str = "2.1", substitution: bool = False) -> Dict[str, Any]:
     """A deep copy of a built-in scenario dict (edit it, then pass it to make / from_dict).
     ``model="2.0"`` returns the scenario exactly as in model 2.0 (pickers work from the next cell).
@@ -251,11 +267,12 @@ def get_scenario(name: str, model: str = "2.1", substitution: bool = False) -> D
         d["model"] = "2.0"
         return d
     if model != "2.1":
-        d["model"] = model                 # 2.2: same scenario as 2.1, plus the 2.2 movement rule
+        d["model"] = model                 # 2.2: same scenario as 2.1, plus the 2.2 movement rule; 2.3: see below
     for tt in d["task_types"]:
         roles = []
         for role in tt["roles"]:
-            if (tt["name"], role["name"]) not in ON_CELL_21.get(name, ()):
+            pair = (tt["name"], role["name"])
+            if pair not in ON_CELL_21.get(name, ()) and not (model >= "2.3" and pair in ON_CELL_23.get(name, ())):
                 roles.append(role)
                 continue
             # one picker steps onto the shelf cell (as in TA-RWARE, one picker per shelf location);
@@ -270,6 +287,8 @@ def get_scenario(name: str, model: str = "2.1", substitution: bool = False) -> D
                     if role["name"] in st["roles"]:
                         st["roles"] = list(st["roles"]) + [extra["name"]]
         tt["roles"] = roles
+        if model >= "2.3" and tt["name"] in PICKER_ALWAYS_23.get(name, ()):
+            _add_picker(tt)
     if substitution:
         d["name"] = "intermediate (substitutable support)"
         for rt in d["robot_types"]:

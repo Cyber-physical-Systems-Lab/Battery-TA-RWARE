@@ -680,11 +680,45 @@ class Simulator:
         rs = t.type.role(role or r.role)
         return rs.option_for(r) or rs.options[0]
 
+    def _convoy(self, t: Task) -> bool:
+        """Model 2.3: a joint carrier pair is a two-cell convoy (macro mode). One carrier stands on the
+        stage cell (a shelf slot or a goal), the other on the free neighbouring cell it came in
+        through; they move as a rigid pair (see ``traffic``)."""
+        return (self.config.model >= "2.3" and self.config.action_mode == "macro"
+                and t.type.carrier_role is not None and t.type.role(t.type.carrier_role).count == 2)
+
+    def _carriers_in_place(self, t: Task, cell: Cell) -> bool:
+        """All carriers of ``t`` are in place at ``cell``: on it (model 2.0-2.2) or, for a convoy, one on
+        it and the other on a neighbouring cell."""
+        cr = t.carriers
+        if self._convoy(t):
+            return (len(cr) == 2 and any(self.robots[i].cell == cell for i in cr)
+                    and all(self.manhattan(self.robots[i].cell, cell) <= 1 for i in cr))
+        return all(self.robots[i].cell == cell for i in cr)
+
     def _present(self, r: Robot, t: Task, role: str, cell: Cell) -> bool:
         opt = self._option(r, t, role)
+        if role == t.type.carrier_role and self._convoy(t):
+            # the leader on the cell; the follower on a free-way (non-shelf) neighbour of it
+            return r.cell == cell or (self.manhattan(r.cell, cell) == 1 and any(
+                self.robots[i].cell == cell for i in t.assigned.get(role, ()) if i != r.id)
+                and (self.layout.zone_of(r.cell) != "storage" or not self._free_way_neighbours(cell)))
         if role == t.type.carrier_role or opt.presence == "on_cell":
             return r.cell == cell
         return self.chebyshev(r.cell, cell) <= opt.radius
+
+    def _free_way_neighbours(self, cell: Cell) -> List[Cell]:
+        return [c for c in ((cell[0] + dy, cell[1] + dx) for dy, dx in MOVES)
+                if self.layout.in_bounds(c) and self.layout.zone_of(c) not in (None, "storage", "dock")]
+
+    def _flank_cell(self, r: Robot, t: Task, cell: Cell) -> Cell:
+        """The free way cell beside ``cell`` where the follower of a convoy stands: the nearest aisle
+        neighbour of the stage cell (any passable neighbour if there is no aisle one)."""
+        pas = self.passable(r.zones(False))
+        nbrs = [(cell[0] + dy, cell[1] + dx) for dy, dx in MOVES]
+        nbrs = [c for c in nbrs if self.layout.in_bounds(c) and pas[c] and self.layout.zone_of(c) != "dock"]
+        aisle = [c for c in nbrs if self.layout.zone_of(c) == "aisle"]
+        return min(aisle or nbrs or [cell], key=lambda c: (self.manhattan(r.cell, c), c))
 
     def _target(self, r: Robot) -> Optional[Cell]:
         """Where a macro-controlled robot wants to be (None = stay)."""
@@ -697,6 +731,13 @@ class Simulator:
         if r.status == RobotStatus.TASK:
             t = self.tasks[r.task_id]
             if r.role == t.type.carrier_role and not t.carried:
+                if self._convoy(t) and r.id != min(t.carriers):
+                    # follower: wait nearby until the leader stands on the payload cell, then take the
+                    # free-way cell beside it (never block the one way into a shelf bay before that)
+                    lead = self.robots[min(t.carriers)]
+                    if lead.cell != t.payload_cell:
+                        return self._staging_cell(r, t.payload_cell)
+                    return self._flank_cell(r, t, t.payload_cell)
                 return self._queue_if_taken(r, t, t.payload_cell, r.zones(False))
             s = t.next_stage_for(r.role)
             if s is None:
@@ -710,7 +751,7 @@ class Simulator:
                 # 1-wide aisles are only ever passed through, never blocked by waiting robots
                 carriers = t.carriers
                 need = t.type.role(t.type.carrier_role).count
-                ready = s == t.stage and len(carriers) == need and all(self.robots[i].cell == cell for i in carriers)
+                ready = s == t.stage and len(carriers) == need and self._carriers_in_place(t, cell)
                 if not ready:
                     return self._staging_cell(r, cell)
             alt = bool(t.type.role(r.role).alternatives)       # an alternative worked from beside the cell
@@ -725,6 +766,61 @@ class Simulator:
         if r.status == RobotStatus.IDLE and not self._parking(r)[r.cell]:
             return self._nearest_free_aisle(r)               # park out of the way
         return None
+
+    def goal_of(self, r: Robot) -> Tuple[Optional[Cell], str]:
+        """``(cell, kind)``: where robot ``r`` is heading this tick and why. Read-only (it does not
+        change the run). ``cell`` is None when the robot stays. ``kind`` is one of ``pickup``
+        (carrier to its payload), ``deliver`` / ``return`` (carrier with the payload to the stage
+        cell of a stage ``at: destination`` / ``at: origin``), ``stage`` (to a work cell),
+        ``help`` (a helper to a standing cell beside the work cell), ``queue`` (a waiting spot off
+        a busy cell), ``charge``, ``park`` or ``none``."""
+        if not r.operational:
+            return None, "none"
+        if r.status == RobotStatus.CHARGE:
+            cell = self.chargers[r.charger].cell
+            tgt = self._target(r)
+            return tgt, ("charge" if tgt == cell else "queue")
+        if r.status == RobotStatus.TASK:
+            t = self.tasks[r.task_id]
+            if self.carrying(r):
+                if self._convoy(t) and r.id != min(t.carriers):
+                    return None, "none"                       # the leader's line stands for the pair
+                tgt = self._queue_if_taken(r, t, t.stage_cell, self._group_zones(t))
+                kind = "deliver" if t.stage_spec.at == "destination" else "return"
+                return tgt, ("queue" if tgt != t.stage_cell else kind)
+            tgt = self._target(r)
+            if tgt is None:
+                return None, "none"
+            if r.role == t.type.carrier_role and not t.carried:
+                return tgt, ("pickup" if tgt == t.payload_cell else "queue")
+            s = t.next_stage_for(r.role)
+            if s is not None and tgt == t.stage_cells[s]:
+                return tgt, "stage"
+            if s is not None and self._option(r, t).presence != "on_cell" \
+                    and self.chebyshev(tgt, t.stage_cells[s]) <= self._option(r, t).radius:
+                return tgt, "help"
+            return tgt, "queue"
+        tgt = self._target(r)
+        return tgt, ("park" if tgt is not None else "none")
+
+    def wait_reason(self, r: Robot) -> Optional[str]:
+        """Why a committed robot that is not working stands still, or None if it is not waiting.
+
+        * ``crew``: in place (on its work cell or its standing cell) and waiting for the rest of the
+          crew, for the carrier, or for the stage to start;
+        * ``queue``: held at a waiting spot because the cell it needs is occupied by another task, is
+          claimed by a task whose crew is complete, or its carrier is not on the stage cell yet;
+        * ``traffic``: has a free way to its goal but another robot is in the way.
+
+        A robot with no commitment is ``idle``, not waiting."""
+        if r.status != RobotStatus.TASK or r.worked or not r.operational:
+            return None
+        cell, kind = self.goal_of(r)
+        if cell is None or cell == r.cell:
+            return "crew"
+        if kind == "queue":
+            return "queue"
+        return "traffic" if (not r.moved and r.blocked_ticks > 0) else None
 
     def _parking_target(self, r: Robot) -> Optional[Cell]:
         """Model 2.1: an idle robot keeps the parking spot it chose while no other robot stands on or
@@ -822,7 +918,7 @@ class Simulator:
             return False
         t = self.tasks[o.task_id]
         if o.role == t.type.carrier_role:
-            return o.cell == (t.stage_cell if t.carried else t.payload_cell)
+            return self._present(o, t, o.role, t.stage_cell if t.carried else t.payload_cell)
         return self._option(o, t).presence == "on_cell" and o.cell == t.stage_cell
 
     def _staging_cell(self, r: Robot, near: Cell, zones=None) -> Cell:
@@ -982,15 +1078,20 @@ class Simulator:
         for r in self.robots:
             if r.id in followers:
                 continue
+            cells = None
             if self.carrying(r):
                 t = self.tasks[r.task_id]
                 members = [self.robots[i] for i in t.carriers]
+                convoy = self._convoy(t)
+                if convoy:
+                    members = [r] + [m for m in members if m is not r]      # the leader first
+                    cells = tuple(m.cell for m in members)
                 ok = all(m.operational for m in members)
                 if ok:
                     t.move_credit = min(1.0, t.move_credit + min(m.spec.speed for m in members))
                 zones = self._group_zones(t)
                 goal = self._queue_if_taken(r, t, t.stage_cell, zones) if ok else None
-                credit, key = t.move_credit, ("task", t.id)
+                credit, key = t.move_credit, (None if convoy else ("task", t.id))
             else:
                 members = [r]
                 ok = r.operational
@@ -999,28 +1100,46 @@ class Simulator:
                 goal = self._target(r) if ok else None
                 zones = tuple(sorted(r.zones(False)))
                 credit = r.move_credit
-                key = ("task", r.task_id) if r.task_id is not None and r.role == self.tasks[r.task_id].type.carrier_role else None
-            if goal is not None and goal != r.cell:
+                key = ("task", r.task_id) if r.task_id is not None and r.role == self.tasks[r.task_id].type.carrier_role \
+                    and not self._convoy(self.tasks[r.task_id]) else None
+            here = cells or (r.cell,)
+            if goal is not None and goal not in here:
                 r.elapsed += 1
             else:
                 r.elapsed = 0
             fixed = (not ok or any(m.charging for m in members) or any(m.id in working for m in members)
                      or credit < 1.0 - 1e-9)
             lasting = not ok or any(m.charging for m in members)     # charging, failed or stranded
-            if self.config.model != "2.0" and not lasting and goal == r.cell and self._stationed(r):
+            if self.config.model != "2.0" and not lasting and goal in here and self._stationed(r):
                 lasting = True       # model 2.1: parked on its own stage cell until the stage is done
             meet = None
             if self.config.model != "2.0" and r.task_id is not None:
                 t = self.tasks[r.task_id]
                 if r.role == t.type.carrier_role:
                     meet = (t.id, t.stage_cell if t.carried else t.payload_cell)
+                    if self._convoy(t) and not t.carried and r.id != min(t.carriers):
+                        meet = None                       # the follower stays on its free-way cell
                 else:
                     mc = self._meet_cell(r)
                     meet = None if mc is None else (t.id, mc)
-            units.append(Unit(r.id, members, r.cell, goal, tuple(sorted(zones)), key, fixed, r.elapsed, lasting, meet))
+            units.append(Unit(r.id, members, r.cell, goal, tuple(sorted(zones)), key, fixed, r.elapsed, lasting, meet,
+                              cells))
         self._traffic.step(units)
         for u in units:
             lead = self.robots[u.id]
+            if len(u.cells) == 2:                       # model 2.3 convoy: a rigid two-cell move
+                if u.next is not None and tuple(u.next) != u.cells:
+                    for m, c in zip(u.members, u.next):
+                        m.heading = _heading(m.cell, c)
+                        m.cell, m.moved = c, True
+                        m.distance += 1
+                    self.tasks[lead.task_id].move_credit -= 1.0
+                    lead.blocked_ticks = 0
+                elif u.goal is not None and u.goal not in u.cells and not u.fixed:
+                    lead.blocked_ticks += 1
+                    if lead.blocked_ticks == 1:
+                        self.events.emit(self.tick, "collision_blocked", robots=(lead.id,), cell=u.cell)
+                continue
             if u.next is not None and u.next != u.cell:
                 for m in u.members:
                     m.heading = _heading(m.cell, u.next)
@@ -1133,7 +1252,8 @@ class Simulator:
             if t.type.carrier_role and not t.carried and t.stage > 0:
                 cr = t.carriers
                 need = t.type.role(t.type.carrier_role).count
-                if len(cr) == need and all(self.robots[i].operational and self.robots[i].cell == t.payload_cell for i in cr):
+                if len(cr) == need and all(self.robots[i].operational for i in cr) \
+                        and self._carriers_in_place(t, t.payload_cell):
                     t.carried, t.payload_cell = True, None
                     self.events.emit(self.tick, "payload_picked", robots=tuple(cr), task=t.id, reload=True)
                 else:

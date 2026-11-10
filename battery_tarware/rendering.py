@@ -6,7 +6,11 @@ robots as regular polygons with a heading tick and a battery badge. Its encoding
 * **shape = robot type** (hexagon, diamond, triangle, octagon, ... in the order of ``robot_types``);
 * **fill colour = what the robot is doing** (``STATUS_COLORS``);
 * **shelf colour = what the shelf is for**: dark blue for stored, teal for a payload waiting to be
-  picked (a requested shelf), and a purple frame for where a carried payload is going;
+  picked (a requested shelf), a purple frame for the goal a carried payload is being delivered to
+  and an orange frame for the shelf slot it is being returned to;
+* **goal line = where a robot is heading**: every robot that is going somewhere has a thin line to
+  its goal, coloured by why (``GOAL_COLORS``: pickup/stage, delivery, return, help, charger,
+  waiting spot, parking spot);
 * **battery badge**: green above 80 %, yellow above 20 %, red below.
 
 Only numpy is needed. ``docs/make_gifs.py`` adds a title bar and a legend with Pillow.
@@ -30,12 +34,19 @@ ZONE_COLORS: Dict[str, Color] = {"goal": (60, 60, 60), "dock": (173, 216, 230)}
 CUSTOM_COLORS: List[Color] = [(250, 230, 160), (230, 200, 235), (200, 235, 225), (250, 210, 190)]
 SHELF: Color = (72, 61, 139)            # stored
 SHELF_REQUESTED: Color = (0, 128, 128)  # payload waiting to be picked / task cell to serve
-SHELF_TARGET: Color = (200, 100, 200)   # where a carried payload is going (frame)
+SHELF_TARGET: Color = (200, 100, 200)   # the goal a carried payload is delivered to (frame)
+SHELF_RETURN: Color = (230, 140, 30)    # the shelf slot a carried payload is returned to (frame)
+GOAL_COLORS: Dict[str, Color] = {
+    "pickup": (150, 190, 235), "stage": (150, 190, 235), "help": (150, 190, 235),
+    "deliver": (200, 100, 200), "return": (230, 140, 30),
+    "charge": (120, 200, 120), "queue": (150, 90, 200), "park": (190, 190, 190),
+}
 
 STATUS_COLORS: Dict[str, Color] = {
-    "idle": (255, 140, 0),          # orange: free
+    "idle": (255, 140, 0),          # orange: no commitment (parked or free)
     "travelling": (30, 144, 255),   # blue: on a task, driving to its cell
-    "waiting": (150, 90, 200),      # violet: on a task, in place, waiting for the rest of the crew
+    "waiting": (150, 90, 200),      # violet: committed, standing still on purpose (crew / busy cell / carrier)
+    "blocked": (250, 210, 0),       # yellow: committed and heading somewhere, but another robot is in the way
     "working": (220, 20, 20),       # red: working a stage
     "carrying": (128, 0, 0),        # maroon: driving with a payload
     "to_charger": (120, 200, 120),  # light green: heading to a charger
@@ -60,7 +71,12 @@ def robot_activity(sim, r) -> str:
         return "working"
     if sim.carrying(r):
         return "carrying"
-    return "travelling" if r.moved else "waiting"
+    if r.moved:
+        return "travelling"
+    why = sim.wait_reason(r)
+    if why is None:
+        return "travelling"                  # on its way but short of speed credit this tick
+    return "blocked" if why == "traffic" else "waiting"
 
 
 def type_sides(type_index: int) -> int:
@@ -148,6 +164,7 @@ def rgb_array(sim, cell_px: int = 30, crew_lines: bool = True) -> np.ndarray:
                 _rect(img, x0 + pad, y0 + pad, x1 - pad, y1 - pad, SHELF)
 
     # tasks: requested shelves (payload waiting, or the cell a non-carrier task is served at) and targets
+    # (purple: the goal it is delivered to; orange: the shelf slot it is returned to)
     live = [t for t in sim.tasks.values() if not t.done and t.state.value != "pending"]
     for t in live:
         if t.payload_cell is not None:
@@ -157,19 +174,15 @@ def rgb_array(sim, cell_px: int = 30, crew_lines: bool = True) -> np.ndarray:
             x0, y0, x1, y1 = box(t.stage_cell)
             _rect(img, x0 + pad, y0 + pad, x1 - pad, y1 - pad, SHELF_REQUESTED)
         if t.carried:
-            _frame(img, *box(t.stage_cell), SHELF_TARGET, w=max(2, cell_px // 10))
+            _frame(img, *box(t.stage_cell), SHELF_TARGET if t.stage_spec.at == "destination" else SHELF_RETURN,
+                   w=max(2, cell_px // 10))
 
-    # crew lines: committed robots that are not yet in place, to the cell they are heading for
+    # goal lines: every robot that is going somewhere gets a thin line to its goal, coloured by why
     if crew_lines:
-        for t in live:
-            for rid in t.robots():
-                r = sim.robots[rid]
-                if r.cell != t.stage_cell and not sim.carrying(r) and robot_activity(sim, r) == "travelling":
-                    _line(img, center(r.cell), center(t.stage_cell), (150, 190, 235), width=1)
-        # robots on their way to a dock: a thin green line to the dock they hold
         for r in sim.robots:
-            if r.charger is not None and not r.charging and r.cell != sim.chargers[r.charger].cell:
-                _line(img, center(r.cell), center(sim.chargers[r.charger].cell), (120, 200, 120), width=1)
+            goal, kind = sim.goal_of(r)
+            if goal is not None and goal != r.cell:
+                _line(img, center(r.cell), center(goal), GOAL_COLORS.get(kind, GOAL_COLORS["stage"]), width=1)
 
     # robots: carried payload underneath, polygon by type, colour by activity, heading, battery
     by_cell: Dict[Tuple[int, int], List] = {}
@@ -216,7 +229,8 @@ def legend(sim) -> Dict[str, list]:
     types = [(name, type_sides(i), sum(r.type_index == i for r in sim.robots))
              for i, name in enumerate(sim.type_names)]
     custom = [z for z in sim.layout.zones if z not in ZONE_COLORS and z not in ("aisle", "storage")]
-    cells = [("shelf", SHELF), ("requested shelf", SHELF_REQUESTED), ("delivery target", SHELF_TARGET)]
+    cells = [("shelf", SHELF), ("requested shelf", SHELF_REQUESTED), ("delivery goal", SHELF_TARGET),
+             ("return slot", SHELF_RETURN)]
     cells += [(z, ZONE_COLORS[z]) for z in ("goal", "dock")]
     cells += [(z, CUSTOM_COLORS[i % len(CUSTOM_COLORS)]) for i, z in enumerate(custom)]
     return {"types": [t for t in types if t[2]], "activities": list(STATUS_COLORS.items()), "cells": cells}
