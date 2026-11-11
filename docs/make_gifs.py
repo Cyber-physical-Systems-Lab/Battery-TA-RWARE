@@ -8,7 +8,8 @@ look). This script adds a title bar and a legend:
 
 * shape = robot type;
 * fill colour = activity (idle, travelling, waiting for the crew, working, carrying, charging, ...);
-* shelf colours: stored, requested (payload waiting), delivery target (purple frame);
+* shelf colours: stored, requested (payload waiting), delivery goal (purple frame), return slot (orange);
+* a line from every moving robot to its goal, coloured by why (pickup, delivery, return, charger, ...);
 * battery badge.
 """
 from __future__ import annotations
@@ -25,8 +26,8 @@ import battery_tarware as bt  # noqa: E402
 from battery_tarware.rendering import legend, regular_polygon, rgb_array, robot_activity  # noqa: E402
 
 OUT = os.path.join(os.path.dirname(__file__), "img")
-CELL = 24
-PANEL = 175
+CELL = 28
+PANEL = 185
 HEAD = 28
 
 
@@ -44,7 +45,7 @@ def frame(env, title):
     sim = env.unwrapped.sim
     world = Image.fromarray(rgb_array(sim, cell_px=CELL))
     leg = legend(sim)
-    rows = 3 + len(leg["types"]) + len(leg["activities"]) + len(leg["cells"])
+    rows = 4 + len(leg["types"]) + len(leg["activities"]) + len(leg["cells"]) + len(leg["goals"])
     h = max(world.height, rows * 16 + 30)
     img = Image.new("RGB", (world.width + PANEL, h + HEAD), (255, 255, 255))
     img.paste(world, (0, HEAD))
@@ -73,10 +74,16 @@ def frame(env, title):
     py += 5
     heading("cells")
     for name, col in leg["cells"]:
-        if name == "delivery target":
+        if name in ("delivery goal", "return slot"):
             d.rectangle([px, py + 1, px + 12, py + 13], outline=col, width=3)
         else:
             d.rectangle([px, py + 1, px + 12, py + 13], fill=col, outline=(0, 0, 0))
+        d.text((px + 18, py), name, fill=(40, 40, 40), font=F_SMALL)
+        py += 15
+    py += 5
+    heading("goal line (where to)")
+    for name, col in leg["goals"]:
+        d.line([px, py + 7, px + 12, py + 7], fill=col, width=2)
         d.text((px + 18, py), name, fill=(40, 40, 40), font=F_SMALL)
         py += 15
     return img
@@ -145,21 +152,24 @@ def scale(cfg, k, generator=None, ascii=None, demand=None, initial_soc=None):
     return cfg
 
 
-def large_scenarios(model="2.1"):
+def large_scenarios(model="2.3"):
     """The four README animations: every scenario scaled up on the same 4 x 7 rack-block layout."""
     import yaml
     tutorial = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "..", "examples", "tutorial.yaml")))
     return {
         # 3x: 18 AGVs, 9 picking robots; part-charged at the start so the shared docks are contested
-        "basic": scale(bt.get_scenario("basic", model=model), 3, initial_soc=[0.25, 0.6],
+        # many open packages (demand x6): every robot is busy and many shelves are requested
+        "basic": scale(bt.get_scenario("basic", model=model), 3, initial_soc=[0.25, 0.6], demand=6,
                        generator=dict(LARGE_RACKS, goals=7, docks=8)),
         # 2x: 12 tote AGVs, 4 pallet AGVs, 10 picking robots
-        "intermediate": scale(bt.get_scenario("intermediate", model=model), 2, generator=dict(LARGE_RACKS, goals=7, docks=12)),
+        # demand x5: peaks keep the fleet busy, with two-AGV convoys for the oversize lifts
+        "intermediate": scale(bt.get_scenario("intermediate", model=model), 2, demand=5,
+                              generator=dict(LARGE_RACKS, goals=7, docks=12)),
         # 2x: receiving shelves in the top-left block, quality check in the bottom-left block
-        "advanced": scale(bt.get_scenario("advanced", model=model), 2, demand=1.0,
+        "advanced": scale(bt.get_scenario("advanced", model=model), 2, demand=2.0,
                           ascii=large_map(goals=7, docks=12, first_column={0: "I", 3: "Q"})),
         # 3x: a packing station in the middle of the goal row
-        "tutorial": scale(tutorial, 3, demand=2, ascii=large_map(goals=6, docks=10, bottom_zone=("P", 4))),
+        "tutorial": scale(dict(tutorial, model=model), 3, demand=3, ascii=large_map(goals=6, docks=10, bottom_zone=("P", 4))),
     }
 
 

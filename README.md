@@ -41,6 +41,7 @@ configured:
 - [Built-in scenarios](#built-in-scenarios)
 - [Interfaces](#interfaces)
 - [Baselines](#baselines)
+- [Orders, scheduling and evaluation](#orders-scheduling-and-evaluation)
 - [Citing, licence and acknowledgements](#citing-licence-and-acknowledgements)
 
 # Environment description
@@ -571,6 +572,120 @@ rank the tiers: advanced completing more tasks than basic does not make it easie
 demand-limited; its Poisson arrivals, not the fleet, cap throughput.
 
 On one CPU core the simulator runs about 400–1100 ticks per second with the greedy baseline.
+
+## Orders, scheduling and evaluation
+
+> In development on branch `feat/orders-scheduling` (not in a release yet). Everything is opt-in:
+> a scenario without an `orders:` key runs tick for tick as before.
+
+<p align="center">
+  <img src="docs/img/orders_kanban.gif" width="820" alt="Warehouse map beside an order-task kanban: cards move from blocked and ready through assigned and executing to completed">
+</p>
+
+With an `orders:` block, work arrives as **orders** (inbound, outbound, relocation; several lines;
+dependencies between their tasks) over a persistent **inventory** of packages on shelves at rack
+locations. Package ids persist across operations. Tasks are released to the simulator only when their
+dependencies, inventory and access conditions hold. A task can be suspended, failed and retried, and
+an order can be cancelled; every such transition has a recorded reason.
+
+```python
+from battery_tarware.orders import order_scenario, run_episode, write_dashboard
+res = run_episode(order_scenario(), rule="plb", seed=0, max_steps=2000)
+print(res["metrics"]["primary"])                 # throughput, lead time, on-time rate, energy/order, ...
+write_dashboard([res["trace"]], "dashboard.html")  # offline replay, open in a browser
+```
+
+or `python examples/orders_quickstart.py examples/orders.yaml fifo` (a scripted trace with inbound,
+outbound, relocation and a three-task dependent order).
+
+`order_scenario(base=...)` puts orders on all three built-in warehouses, with the operation's crew
+chosen by shelf weight: `basic` (AGV alone, with one or two picking robots), `intermediate` (tote and
+pallet AGVs, a support role filled by a picking robot on the shelf cell *or* a tote AGV beside it,
+two-carrier joint transport, fast/slow docks) and `advanced` (AGV + mobile manipulator + inventory
+drone with a quality-check stage, forklifts, inbound at the receiving zone, breakdowns). Generated
+orders can be compound (`cross_dock`: receive, then ship that package; `replenish`: relocate a
+shelf, then pick from it) and multi-line orders can be chained (`source.sequence`).
+
+**Scheduling.** `OrderScheduler(rule)` runs one pipeline for every rule: the shared charging rule;
+the eligible set; feasible coalitions from the simulator (capabilities, role alternatives, payload,
+reachability, 15% battery reserve), with a reason for each infeasible task; then ranking and atomic
+commits. Rules differ only in the ranking:
+
+| Rule | Ranks | Key |
+|---|---|---|
+| `fifo` / `edd` / `lwf` | tasks | order arrival / due date / longest wait since the task last became open |
+| `wsp` (`wsp_eq`) | tasks | 0.45·priority + 0.30·min(wait/100, 1) + 0.25·type score (outbound 0.8, inbound 0.6, relocation 0.4; `wsp_eq`: equal type scores) |
+| `spt` / `cr` | tasks | remaining processing estimate / (due − now) ÷ processing estimate |
+| `nsp` | pairs | crew arrival time |
+| `zlp_2d` | pairs | 0.8·zone affinity (rack-block zones; 1.0 / 0.7 / 0.3) + 0.2·priority |
+| `plb` | pairs | 0.4·(1 − path conflict) + 0.3·workload balance + 0.3·(1 − crew path length) |
+
+Every tick writes a `schedule_decision` event: the candidates, their scores, the feasible coalitions,
+and each task's outcome or rejection reason.
+
+**Metrics and diagnosis.** `TraceRecorder` adds per-tick robot frames and a cause per waiting task
+(sequencing, coalition unavailable, charging contention, congestion, dependency, ...) to the event
+log. `evaluate(trace)` reports order, scheduling, robot, coalition and system metrics, censoring
+unfinished work, and diagnoses each unsuccessful order with an evidence span
+([docs/metrics.md](docs/metrics.md)).
+
+**Dashboard.** `write_dashboard(traces, path)` (or `python -m battery_tarware.orders.dashboard
+trace.json -o dashboard.html`) writes one self-contained HTML file. It offers playback, the map,
+an order-task kanban, order flow (cumulative arrived and completed) and throughput charts, the order
+queue, the dependency graph, scheduler decisions, robots, packages, stations and charging docks,
+battery, a cause timeline, metrics, and diagnosis with jump-to-evidence. Click an order, task,
+robot, package, or a station, dock or shelf on the map to see its details and history; a station
+shows its deliveries, service and occupancy, and a dock its sessions, energy and occupancy. You can
+filter by run, order, package, task, robot, coalition or event, and export CSV or JSON. A deep link
+such as `#run=1&t=300&order=O00012` or `#t=900&charger=0` opens a given view.
+
+<p align="center"><img src="docs/img/dashboard.png" width="760" alt="Replay dashboard: map, selected order, order-task kanban"></p>
+
+**Evaluation.** The experiments live in `experiments/orders/`:
+- `exploratory.py`: one factor at a time (arrival rate, task mix, coalition size, fleet
+  heterogeneity, battery and docks, layout), paired seeds and bootstrap CIs;
+- `confirmatory.py`: a pre-registered protocol on fresh seeds;
+- `scalability.py`.
+
+Results and commands are in [experiments/orders/README.md](experiments/orders/README.md). The
+pre-registered confirmatory run (20 fresh seeds, Bonferroni-corrected CIs) supports 7 of 9
+hypotheses in the basic-warehouse family:
+- NSP raises throughput over FIFO at base load (+7.9 orders per 1,000 ticks; FIFO 79.9), with
+  larger coalitions (+17.1) and with tight batteries (+9.4).
+- NSP cuts mean lead time from 186 to 93 ticks at base load.
+- LWF is slower than FIFO.
+- When demand-limited, NSP and FIFO are equivalent.
+- PLB did not beat FIFO: on one seed it drove the fleet into a model 2.1 gridlock (see the known
+  limitations below).
+- WSP's operation-type weights did not measurably shorten lead time against the equal-type
+  ablation.
+
+These are results for this simulator and these scenarios, not general claims about the rules.
+
+**Second evaluation (model 2.2, expanded warehouses).** A separate pre-registered study on new seeds
+([experiments/orders_v2/README.md](experiments/orders_v2/README.md)) supports 11 of 13 hypotheses:
+NSP's advantage over FIFO holds under model 2.2 and generalizes to the intermediate and advanced
+warehouses and to large dependency graphs, but is much smaller there (+1.0 to +1.2 orders per 1,000
+ticks against +7.7 in the basic family; lead time still 17-21% shorter); without role alternatives
+the throughput gain is not confirmed. With model 2.2, PLB beats FIFO (+1.9). Model 2.2 and 2.1 give
+equivalent throughput outside the gridlock. 18,000-tick stress runs pass every inventory and
+event-log check; under overload, the pair rules leave some orders waiting far longer than FIFO.
+The scheduler meets a 20 ms per-tick target up to 36 robots except for PLB, and misses it on most
+ticks with 72 robots.
+
+**Known limitation of model 2.1, fixed in model 2.2.** Model 2.1 can deadlock through
+hold-and-wait. A picking robot working from a cell next to its own task's shelf may stand on another
+task's work cell. That task's loaded AGV then waits for the cell, and the waiting crews block the
+aisle the first task still needs. This happened in 2 of 1,480 evaluation runs of the first study,
+both under PLB; the stall detector reports it and the diagnosis names it "navigation deadlock".
+Model 2.1 stays frozen (and the default) so those results remain reproducible; the opt-in model 2.2
+(`model: "2.2"`) keeps such helpers off other tasks' work cells
+([semantics](docs/semantics.md#model-22-helper-work-cell-reservation)).
+`python experiments/checks/known_gridlock.py` reproduces the gridlock under 2.1 and shows that 2.2
+is free of it.
+
+The design and its modelling assumptions are in
+[docs/design/orders_and_scheduling.md](docs/design/orders_and_scheduling.md).
 
 ## Citing, licence and acknowledgements
 

@@ -1,4 +1,4 @@
-# Simulation semantics (model versions 2.0 and 2.1)
+# Simulation semantics (model versions 2.0, 2.1 and 2.2)
 
 This page is part of the public contract of Battery-TA-RWARE. Results obtained with the simulator
 depend on these rules, so **report the package version (and this model version) with every
@@ -10,6 +10,12 @@ new major version.
 operational rules in [Model 2.1](#model-21-occupancy-docking-and-waiting) below. Set `model: "2.0"`
 (and use `get_scenario(name, model="2.0")` for a built-in scenario) to reproduce model 2.0 exactly; this
 is verified tick by tick against release 2.0.0.
+
+**Model 2.2 is opt-in** (`model: "2.2"`, `get_scenario(name, model="2.2")`). It keeps every model 2.1
+rule and adds one: the [helper work-cell reservation](#model-22-helper-work-cell-reservation).
+Selecting 2.1 (the default) reproduces model 2.1 exactly; this is checked against fingerprints
+recorded before 2.2 existed (`python experiments/checks/identity.py`). Report results of 2.1 and
+2.2 separately: a difference between them is a change of the simulated warehouse, not of a policy.
 
 Version 2 is a new engine. It is **not trajectory-compatible** with TA-RWARE / Battery-TA-RWARE v1
 (git tag `legacy-v1.1.0`, branch `v1`), or with any study that ran on the v1 kernel. Its movement,
@@ -169,6 +175,12 @@ A cell holds one robot, with exactly these exceptions:
 - **Separation.** Robots that shared a cell under the two rules above stay together after their task
   releases them only until they drive apart. In the validated scenarios this takes at most 10 ticks.
 
+- **Role alternatives.** The position comes from the alternative a robot fills its role through,
+  not from the role. For example, in `get_scenario("intermediate", substitution=True)` the `case`
+  support slot is filled either by a picking robot on the shelf cell (it shares the cell with the
+  carrier, as above) or by a tote AGV with `load_assist` from a neighbouring cell. A robot filling a
+  role through an `adjacent` alternative never targets or works on the stage cell itself.
+
 Occupancy compatibility is not coalition membership. Being assigned to the same task does not let a
 robot share every cell with its partners: only the cell where the active stage needs them together.
 Robots of unrelated tasks never share a cell.
@@ -216,7 +228,87 @@ outside the step (`Simulator._target`) does not change the run.
 
 ### Validation
 
-The 2.1 rules were validated against a pre-registered behavioural gate (vertex and swap conflicts,
-dock exclusivity, no persistent no-progress or oscillation, no new stranding, exact reproduction of
-model 2.0) on all built-in scenarios and their large versions, with the outcome and every revision
-recorded in `validation/model_2_1/PREREGISTRATION.md`.
+The 2.1 rules were validated against a pre-registered behavioural gate on all built-in scenarios
+and their large versions (2026-11-06; the gate scripts and the pre-registration record are kept
+outside the published repository). Outcome of the confirmation run: model 2.0 reproduced exactly;
+no swap or dock-exclusivity violation; no new stranding; the vertex-conflict criterion *as
+registered* failed (it did not allow the intended co-location of a carrier and its crew on their
+work cell) and passed under an amended definition fixed before the confirmation run; one
+no-progress and one oscillation event, both traced to legitimate waiting behind a broken-down robot.
+The same occupancy, swap, dock, no-progress and oscillation checks are re-run for models 2.1 and 2.2
+by `experiments/model_2_2/gate.py`.
+
+## Model 2.2: helper work-cell reservation
+
+Model 2.1 keeps carriers and `on_cell` crew off a stage cell another task needs until their own
+crew is complete (*Shared work cells* above). It did not cover helpers that work from **beside**
+the stage cell (`presence: adjacent`, e.g. the second picking robot of a `large` task). Such a
+helper could choose, and wait on, a neighbouring cell that is another task's work cell. That task's
+loaded carrier then waits for the cell next to it, in the aisle, and can block the route of the
+first task's remaining crew: a hold-and-wait cycle in which no robot of either crew moves again
+(reproduced by `python experiments/checks/known_gridlock.py`).
+
+Model 2.2 adds one rule:
+
+- **Helper work-cell reservation.** A robot filling an `adjacent` role never chooses or keeps, as
+  its standing or waiting cell, a cell that is the current stage cell or payload cell of another
+  open, staffed task (its own task's stage cell excepted). If every standing cell within its radius
+  is reserved this way, it waits at a neutral staging cell nearby (*Waiting spots* above) until one
+  is free. A helper already working a stage finishes it first.
+
+Nothing else changes: no timeout, forced move or random perturbation was added, and deadlock is
+prevented by not entering the conflicting state rather than by recovering from it. The rule was
+validated with a gate whose criteria were fixed before it was run (`experiments/model_2_2/GATE.md`,
+`python experiments/model_2_2/gate.py`): occupancy, swaps and dock exclusivity as for 2.1, helper
+targets, no-progress and oscillation streaks, stranding compared with 2.1, and no suspected stall
+in the order scenarios.
+
+## Model 2.3 (opt-in): pickers on every pick, two-cell convoys, goals and waiting
+
+Set `model: "2.3"` (`get_scenario(name, model="2.3")`). It builds on 2.2 and changes only what is
+listed here. 2.0-2.2 trajectories are unchanged (`experiments/checks/identity.py`).
+
+### A picker on every pick and return
+
+Loading a tote onto an AGV and putting it back on its shelf always involves a picking robot. In the
+built-in scenarios the task types that had no picker (`solo` in basic, `tote` in intermediate) get
+one, standing on the shelf cell like every other picker; the spotter of the two-AGV `oversize` lift
+also stands on the shelf cell. The picker is in the `pick` and `return` stages, not in `deliver`.
+
+### Two-AGV carrying: a convoy of two cells (macro mode)
+
+A task whose carrier role has two robots (`count: 2`) is carried by a convoy. More than two carriers
+are rejected in 2.3. Primitive mode keeps the 2.0-2.2 behaviour (the pair shares one cell).
+
+- **Two cells.** The two carriers never share a cell. While carrying, they always occupy two
+  neighbouring cells and move as a rigid pair like a snake: one tick, either end leads, steps into a
+  free neighbouring cell, and the other end moves into the cell the leading end left. A convoy can
+  therefore back out of a shelf bay through the cell its follower stood on. Only the one newly
+  entered cell has to be free; pushing an occupant out of it follows the usual PIBT rules.
+- **Leader and follower.** The leader is the carrier with the lowest id. Before the payload is
+  lifted the leader drives to the payload cell; the follower waits at a waiting spot nearby until the
+  leader stands there, then takes the free-way cell beside it (the nearest aisle neighbour). This
+  keeps the one way into a shelf bay open for the leader.
+- **Presence.** A convoy is *in place* at a stage cell when one carrier stands on it and the other
+  stands on a neighbouring cell that is not a shelf (the free way: an aisle cell next to a shelf slot or
+  a goal). This is where the pick, the delivery and the return are worked. The picker of the task
+  steps onto the stage cell beside the carrier on it, as in 2.1.
+- Both carriers pay for their share of the payload while moving (unchanged), and a convoy moves at
+  the speed of its slowest member.
+- The coalition estimates still treat the follower's distance as the distance to the payload cell, so
+  they are optimistic by at most one cell.
+
+### Goals, deliveries and waiting (rendering and reporting; no change to the dynamics)
+
+- `Simulator.goal_of(robot)` returns where a robot is heading and why: `pickup`, `stage`, `help`,
+  `deliver` (to a goal), `return` (to the shelf slot), `queue` (a waiting spot off a busy cell),
+  `charge`, `park` or `none`. The renderer draws a thin line to the goal for every robot that is going
+  somewhere, coloured by that reason, and frames the goal a payload is *delivered* to (purple) apart
+  from the shelf slot it is *returned* to (orange).
+- Idle and waiting are different states. A robot is **idle** when it has no commitment: it is parked
+  or free and is not working for anyone. It is **waiting** when it is committed to a task and stands
+  still on purpose; `Simulator.wait_reason(robot)` says why: `crew` (in place, waiting for the rest of
+  the crew or for the stage to start) or `queue` (held at a waiting spot because its cell is busy,
+  claimed by a task whose crew is complete, or its carrier is not in place yet). It is **blocked**
+  (`traffic`) when it has a free way to its goal but another robot is in the way.
+

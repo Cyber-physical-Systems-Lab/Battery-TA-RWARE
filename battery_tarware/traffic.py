@@ -14,6 +14,12 @@ carrier group moving as one) takes at most one step:
   dead end;
 * ties in distance prefer unoccupied cells (a choice made for this package).
 
+Model 2.3: a joint carrier pair is a *rigid two-cell unit* (a convoy): its two robots occupy two
+adjacent cells and move like a snake. One tick, either end may lead: the leading end steps into a
+free neighbouring cell and the other end moves into the cell the leading end left, so a convoy can
+also back out of a dead end (a shelf bay) through the cell its follower stood on. Only the one newly
+entered cell has to be free; the pushed-occupant rules of PIBT apply to it unchanged.
+
 The code is an independent implementation written for this package; no code was copied from the
 reference implementations.
 
@@ -58,10 +64,13 @@ def reverse_distances(layout, passable: np.ndarray, goal: Cell) -> np.ndarray:
 
 
 class Unit:
-    __slots__ = ("id", "members", "cell", "goal", "zones", "key", "fixed", "priority", "next", "lasting", "meet")
+    __slots__ = ("id", "members", "cell", "goal", "zones", "key", "fixed", "priority", "next", "lasting", "meet",
+                 "cells")
 
-    def __init__(self, id_, members, cell, goal, zones, key, fixed, priority, lasting=False, meet=None):
+    def __init__(self, id_, members, cell, goal, zones, key, fixed, priority, lasting=False, meet=None, cells=None):
         self.id, self.members, self.cell, self.goal = id_, members, cell, goal
+        # cells the unit occupies: one for a robot, two (in member order) for a model 2.3 convoy
+        self.cells: Tuple[Cell, ...] = tuple(cells) if cells is not None else (cell,)
         self.zones, self.key, self.fixed, self.priority = zones, key, fixed, priority
         self.lasting = lasting                   # model 2.1: fixed for longer than a tick or two
         self.meet = meet                         # model 2.1: (task id, cell) where this crew may share a cell
@@ -78,7 +87,7 @@ class PIBT:
     def route_distances(self, u: "Unit") -> np.ndarray:
         """Distances used to rank u's moves: model 2.1 treats long-lived obstacles as walls."""
         static = self.distances(u.zones, u.goal)
-        walls = [c for c in self._walls if c != u.goal and c != u.cell]
+        walls = [c for c in self._walls if c != u.goal and c not in u.cells]
         if not walls or self.sim.config.model == "2.0":
             return static
         key = (u.zones, u.goal, tuple(walls))
@@ -90,7 +99,7 @@ class PIBT:
                 pas[c] = False
             self._wdist[key] = reverse_distances(self.sim.layout, pas, u.goal)
         d = self._wdist[key]
-        return d if d[u.cell] != INF else static          # no way around: wait as in model 2.0
+        return d if min(d[c] for c in u.cells) != INF else static     # no way around: wait as in model 2.0
 
     def passable(self, zones: Tuple[str, ...]) -> np.ndarray:
         """Cells a unit may route through. Model 2.1: docks are destinations only (a unit enters a
@@ -117,11 +126,12 @@ class PIBT:
         self.reserved: Dict[Cell, List[Unit]] = {}
         self.now: Dict[Cell, List[Unit]] = {}
         for u in units:
-            self.now.setdefault(u.cell, []).append(u)
+            for c in u.cells:
+                self.now.setdefault(c, []).append(u)
         for u in units:
             if u.fixed:
-                self._reserve(u, u.cell)
-        self._walls = tuple(sorted({u.cell for u in units if u.lasting}))
+                self._reserve(u, u.cell if len(u.cells) == 1 else u.cells)
+        self._walls = tuple(sorted({c for u in units if u.lasting for c in u.cells}))
         for u in sorted(units, key=lambda u: (-u.priority, u.id)):
             if u.next is None:
                 self._pibt(u, None)
@@ -132,13 +142,21 @@ class PIBT:
         # model 2.1: a task's carrier and its on_cell crew may share the cell where they work together
         return a.meet is not None and a.meet == b.meet and cell == a.meet[1]
 
-    def _reserve(self, u: Unit, c: Cell) -> None:
+    def _reserve(self, u: Unit, c) -> None:
+        """Reserve a cell (a robot) or the tuple of new cells (a convoy)."""
         u.next = c
-        self.reserved.setdefault(c, []).append(u)
+        for x in ((c,) if len(u.cells) == 1 else c):
+            self.reserved.setdefault(x, []).append(u)
 
-    def _unreserve(self, u: Unit, c: Cell) -> None:
-        self.reserved[c].remove(u)
+    def _unreserve(self, u: Unit, c) -> None:
+        for x in ((c,) if len(u.cells) == 1 else c):
+            self.reserved[x].remove(u)
         u.next = None
+
+    @staticmethod
+    def _stays(w: Unit, c: Cell) -> bool:
+        """Has ``w`` decided to occupy ``c`` next tick?"""
+        return c in w.next if len(w.cells) == 2 else w.next == c
 
     def _candidates(self, u: Unit, parent: Optional[Unit] = None) -> List[Cell]:
         sim = self.sim
@@ -186,13 +204,15 @@ class PIBT:
         return None
 
     def _pibt(self, u: Unit, parent: Optional[Unit]) -> bool:
+        if len(u.cells) == 2:
+            return self._try_rigid(u, parent, self._moves_rigid(u, parent))
         cands = self._candidates(u, parent)
         # swap operation (Okumura, IJCAI 2023), restricted to dead ends: if the best cell holds a unit stuck in a dead end whose only
         # way out is u's cell, waiting cannot help -- u steps away instead and pulls that unit out
         swap = None
         if parent is None and cands and cands[0] != u.cell:
             w = self._occupant(u, cands[0])
-            if w is not None and w.goal is not None and self._dead_end(w, u.cell):
+            if w is not None and len(w.cells) == 1 and w.goal is not None and self._dead_end(w, u.cell):
                 wc = self._candidates(w)
                 if wc and wc[0] == u.cell:
                     swap = w
@@ -212,7 +232,7 @@ class PIBT:
             ok = True
             for w in list(self.now.get(c, [])):
                 if w is u or self._compatible(u, w, c) or w.next is not None:
-                    if w is not u and not self._compatible(u, w, c) and w.next == c:
+                    if w is not u and not self._compatible(u, w, c) and self._stays(w, c):
                         ok = False                               # occupant stays here
                         break
                     continue
@@ -224,4 +244,59 @@ class PIBT:
             self._unreserve(u, c)
         if u.next is None:
             self._reserve(u, u.cell)
+        return False
+
+    # ---- model 2.3: rigid two-cell convoy
+    def _moves_rigid(self, u: Unit, parent: Optional[Unit]) -> List[Tuple[Cell, Cell]]:
+        """The convoy's candidate placements ``(cell of member 0, cell of member 1)``, best first:
+        staying, or either end leading into a free neighbour while the other end takes the cell the
+        leading end left. Ranked by the remaining distance of the cell the leading end enters."""
+        sim = self.sim
+        pas = self.passable(u.zones)
+        dist = self.route_distances(u) if u.goal is not None else None
+        a, b = u.cells
+        pcells = parent.cells if parent is not None else ()
+        out = []
+        stay_d = 0 if dist is None else int(min(dist[a], dist[b]))
+        out.append((stay_d, 0, 0, -1, -1, (a, b)))
+        for lead, (me, other) in enumerate(((a, b), (b, a))):
+            for k, (dy, dx) in enumerate(MOVES):
+                c = (me[0] + dy, me[1] + dx)
+                if c == other or c in pcells or not sim.layout.in_bounds(c) or not sim.layout.move_ok(me, c, k):
+                    continue
+                if not (pas[c] or c == u.goal):
+                    continue
+                busy = any(w is not u and not self._compatible(u, w, c) for w in self.now.get(c, []))
+                new = (c, a) if lead == 0 else (b, c)      # member 0 / member 1 after the move
+                out.append((0 if dist is None else int(dist[c]), int(busy), 1, lead, k, new))
+        out.sort(key=lambda m: m[:5])
+        return [m[5] for m in out]
+
+    def _try_rigid(self, u: Unit, parent: Optional[Unit], moves: List[Tuple[Cell, Cell]]) -> bool:
+        for new in moves:
+            if any(c in (parent.cells if parent is not None else ()) for c in new):
+                continue                                         # no swapping with the pusher
+            if any(not self._compatible(u, o, c) for c in new for o in self.reserved.get(c, []) if o is not u):
+                continue
+            self._reserve(u, new)
+            ok = True
+            for c in new:
+                if c in u.cells:
+                    continue                                     # a cell the convoy already holds
+                for w in list(self.now.get(c, [])):
+                    if w is u or self._compatible(u, w, c) or w.next is not None:
+                        if w is not u and not self._compatible(u, w, c) and self._stays(w, c):
+                            ok = False
+                            break
+                        continue
+                    if w.fixed or not self._pibt(w, u):
+                        ok = False
+                        break
+                if not ok:
+                    break
+            if ok:
+                return True
+            self._unreserve(u, new)
+        if u.next is None:
+            self._reserve(u, u.cells)
         return False

@@ -1,0 +1,268 @@
+{
+ "title": "Second order-scheduling evaluation: model 2.2 and expanded warehouses (pre-registered 2026-11-07, after the exploratory pass at commit 1496b23)",
+ "basis": "Hypotheses chosen from the exploratory pass (experiments/orders_v2/exploratory.py, seeds 2000-2009). Tested here on fresh seeds 3000-3019 never run before. The first study (experiments/orders/confirmatory_protocol.json, seeds 1000-1019) and its results are unchanged and separate.",
+ "exclusions": "advanced warehouse with tight batteries is not tested: in the exploratory pass its runs were dominated by inventory drones stranding (36 Wh packs) and blocking cells or removing the only inspection capability; reported as a limitation.",
+ "margins": "equivalence margins: C10 and C11 about 5-8% of the exploratory FIFO mean (12.8 and 55.3 orders/1000 ticks), rounded up to 0.5; C12 and C13 +-1.0 (about 1.2% of the base throughput), since the correction should change nothing outside the rare gridlock.",
+ "ticks": 3000,
+ "warmup": 300,
+ "seeds": [
+  3000,
+  3001,
+  3002,
+  3003,
+  3004,
+  3005,
+  3006,
+  3007,
+  3008,
+  3009,
+  3010,
+  3011,
+  3012,
+  3013,
+  3014,
+  3015,
+  3016,
+  3017,
+  3018,
+  3019
+ ],
+ "ci_level": 0.996154,
+ "ci_note": "percentile bootstrap over seeds (10000 resamples) of paired differences; Bonferroni 1 - 0.05/13",
+ "configs": {
+  "base@2.1": {
+   "factors": {},
+   "model": "2.1"
+  },
+  "base@2.2": {
+   "factors": {},
+   "model": "2.2"
+  },
+  "basic/standard": {
+   "workload": {
+    "model": "2.2",
+    "base": "basic",
+    "profile": "standard"
+   }
+  },
+  "intermediate/standard": {
+   "workload": {
+    "model": "2.2",
+    "base": "intermediate",
+    "profile": "standard"
+   }
+  },
+  "intermediate/dag": {
+   "workload": {
+    "model": "2.2",
+    "base": "intermediate",
+    "profile": "dag"
+   }
+  },
+  "intermediate/tight": {
+   "workload": {
+    "model": "2.2",
+    "base": "intermediate",
+    "profile": "standard",
+    "battery": "tight"
+   }
+  },
+  "intermediate/no_alternatives": {
+   "workload": {
+    "model": "2.2",
+    "base": "intermediate",
+    "profile": "standard",
+    "substitution": false
+   }
+  },
+  "advanced/standard": {
+   "workload": {
+    "model": "2.2",
+    "base": "advanced",
+    "profile": "standard"
+   }
+  },
+  "advanced/dag": {
+   "workload": {
+    "model": "2.2",
+    "base": "advanced",
+    "profile": "dag"
+   }
+  }
+ },
+ "rules": {
+  "base@2.1": [
+   "nsp",
+   "plb"
+  ],
+  "base@2.2": [
+   "fifo",
+   "nsp",
+   "plb"
+  ],
+  "basic/standard": [
+   "fifo",
+   "nsp"
+  ],
+  "intermediate/standard": [
+   "fifo",
+   "nsp"
+  ],
+  "intermediate/dag": [
+   "fifo",
+   "nsp"
+  ],
+  "intermediate/tight": [
+   "fifo",
+   "nsp"
+  ],
+  "intermediate/no_alternatives": [
+   "fifo",
+   "nsp"
+  ],
+  "advanced/standard": [
+   "fifo",
+   "nsp"
+  ],
+  "advanced/dag": [
+   "fifo",
+   "nsp"
+  ]
+ },
+ "hypotheses": [
+  {
+   "id": "C1",
+   "kind": "rules",
+   "config": "base@2.2",
+   "rule": "nsp",
+   "reference": "fifo",
+   "metric": "throughput",
+   "direction": "higher",
+   "statement": "model 2.2, first-study base: NSP completes more orders per 1000 ticks than FIFO (replication of H1)"
+  },
+  {
+   "id": "C2",
+   "kind": "rules",
+   "config": "base@2.2",
+   "rule": "plb",
+   "reference": "fifo",
+   "metric": "throughput",
+   "direction": "higher",
+   "statement": "model 2.2, first-study base: PLB completes more orders than FIFO (the H3 question without the 2.1 gridlock)"
+  },
+  {
+   "id": "C3",
+   "kind": "rules",
+   "config": "basic/standard",
+   "rule": "nsp",
+   "reference": "fifo",
+   "metric": "throughput",
+   "direction": "higher",
+   "statement": "basic warehouse, standard order profile (compound and sequenced orders): NSP > FIFO throughput"
+  },
+  {
+   "id": "C4",
+   "kind": "rules",
+   "config": "intermediate/standard",
+   "rule": "nsp",
+   "reference": "fifo",
+   "metric": "throughput",
+   "direction": "higher",
+   "statement": "intermediate warehouse (heterogeneous fleet, role alternatives, joint transport): NSP > FIFO throughput"
+  },
+  {
+   "id": "C5",
+   "kind": "rules",
+   "config": "intermediate/standard",
+   "rule": "nsp",
+   "reference": "fifo",
+   "metric": "lead_time_mean",
+   "direction": "lower",
+   "statement": "intermediate warehouse: NSP has a shorter mean order lead time than FIFO"
+  },
+  {
+   "id": "C6",
+   "kind": "rules",
+   "config": "advanced/standard",
+   "rule": "nsp",
+   "reference": "fifo",
+   "metric": "throughput",
+   "direction": "higher",
+   "statement": "advanced warehouse (3-type crews with a QC stage, forklifts, breakdowns): NSP > FIFO throughput"
+  },
+  {
+   "id": "C7",
+   "kind": "rules",
+   "config": "advanced/standard",
+   "rule": "nsp",
+   "reference": "fifo",
+   "metric": "lead_time_mean",
+   "direction": "lower",
+   "statement": "advanced warehouse: NSP has a shorter mean order lead time than FIFO"
+  },
+  {
+   "id": "C8",
+   "kind": "rules",
+   "config": "intermediate/dag",
+   "rule": "nsp",
+   "reference": "fifo",
+   "metric": "throughput",
+   "direction": "higher",
+   "statement": "intermediate warehouse, large dependency graphs (2-4 lines, 70% chained): NSP > FIFO throughput"
+  },
+  {
+   "id": "C9",
+   "kind": "rules",
+   "config": "intermediate/no_alternatives",
+   "rule": "nsp",
+   "reference": "fifo",
+   "metric": "throughput",
+   "direction": "higher",
+   "statement": "intermediate warehouse without role alternatives: NSP > FIFO throughput"
+  },
+  {
+   "id": "C10",
+   "kind": "rules",
+   "config": "advanced/dag",
+   "rule": "nsp",
+   "reference": "fifo",
+   "metric": "throughput",
+   "direction": "equivalent",
+   "statement": "advanced warehouse, large dependency graphs: NSP and FIFO throughput equivalent within +-1.0 orders/1000 ticks (the advantage does not carry over)",
+   "margin": 1.0
+  },
+  {
+   "id": "C11",
+   "kind": "rules",
+   "config": "intermediate/tight",
+   "rule": "nsp",
+   "reference": "fifo",
+   "metric": "throughput",
+   "direction": "equivalent",
+   "statement": "intermediate warehouse, tight batteries and half the docks: NSP and FIFO throughput equivalent within +-3.0 orders/1000 ticks",
+   "margin": 3.0
+  },
+  {
+   "id": "C12",
+   "kind": "models",
+   "config": "base@2.2",
+   "reference_config": "base@2.1",
+   "rule": "nsp",
+   "metric": "throughput",
+   "direction": "equivalent",
+   "margin": 1.0,
+   "statement": "first-study base, NSP: model 2.2 and 2.1 throughput equivalent within +-1.0 orders/1000 ticks (the correction does not change behaviour outside the gridlock)"
+  },
+  {
+   "id": "C13",
+   "kind": "models",
+   "config": "base@2.2",
+   "reference_config": "base@2.1",
+   "rule": "plb",
+   "metric": "throughput",
+   "direction": "equivalent",
+   "margin": 1.0,
+   "statement": "first-study base, PLB: model 2.2 and 2.1 throughput equivalent within +-1.0 orders/1000 ticks"
+  }
+ ]
+}

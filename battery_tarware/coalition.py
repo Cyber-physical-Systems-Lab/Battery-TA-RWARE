@@ -71,7 +71,15 @@ def estimate(sim, t, robot: Robot, role: str, start=None) -> Tuple[float, float]
         if role in st.roles:
             if cell != target:
                 d = _dist(sim, robot, cell, target, carrying)
-                if d == float("inf") and not carrier:   # adjacent presence: aim next to the cell
+                rs = t.type.role(role)
+                opt = rs.option_for(robot)
+                if rs.alternatives and opt is not None and opt.presence == "adjacent" and not carrier:
+                    # a role alternative worked from beside the cell: aim at the nearest cell within radius
+                    rad = opt.radius
+                    d = min((_dist(sim, robot, cell, (target[0] + dy, target[1] + dx), False)
+                             for dy in range(-rad, rad + 1) for dx in range(-rad, rad + 1)
+                             if (dy or dx) and sim.layout.in_bounds((target[0] + dy, target[1] + dx))), default=d)
+                elif d == float("inf") and not carrier:   # adjacent presence: aim next to the cell
                     d = min((_dist(sim, robot, cell, (target[0] + dy, target[1] + dx), False)
                              for dy in (-1, 0, 1) for dx in (-1, 0, 1)), default=float("inf"))
                 move_t = d / robot.spec.speed
@@ -102,7 +110,7 @@ def feasible_coalitions(sim, t, robots: Optional[Sequence[int]] = None, limit: i
         rs = t.type.role(role)
         cands = []
         for r in pool:
-            if not r.can(rs.capability):
+            if not rs.accepts(r):
                 continue
             if role == t.type.carrier_role and r.spec.payload_kg <= 0:
                 continue

@@ -129,7 +129,7 @@ class ObservationBuilder:
                 sy, sx = tk.stage_cell[0] / max(1, self.H - 1), tk.stage_cell[1] / max(1, self.W - 1)
                 left = 1.0 if tk.deadline is None else max(-1.0, min(1.0, (tk.deadline - tick) / self.T))
                 open_r = tk.joinable_roles()
-                open_caps = [sum(n for role, n in open_r.items() if tk.type.role(role).capability == c) for c in self.caps]
+                open_caps = [sum(n for role, n in open_r.items() if c in tk.type.role(role).capabilities) for c in self.caps]
                 req = tk.required
                 tasks[k] = np.concatenate([
                     [1.0, 1.0, min(1.0, tk.weight_kg / self.max_payload), oy, ox, dy, dx, sy, sx,
