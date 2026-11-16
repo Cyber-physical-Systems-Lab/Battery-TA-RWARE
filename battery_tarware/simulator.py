@@ -1359,9 +1359,14 @@ class Simulator:
 
     # ───────────────────────────────────────── coalitions
     def feasible_coalitions(self, task_id: int, robots: Optional[Sequence[int]] = None, limit: int = 10,
-                            per_role_candidates: int = 6, energy_reserve: float = 0.05):
+                            per_role_candidates: int = 6, energy_reserve: float = 0.05,
+                            legacy_pruning: Optional[bool] = None):
+        """``legacy_pruning`` None: the simulator's setting (``legacy_coalition_pruning``, default False)."""
         from battery_tarware.coalition import feasible_coalitions
-        return feasible_coalitions(self, self.tasks[task_id], robots, limit, per_role_candidates, energy_reserve)
+        if legacy_pruning is None:
+            legacy_pruning = getattr(self, "legacy_coalition_pruning", False)
+        return feasible_coalitions(self, self.tasks[task_id], robots, limit, per_role_candidates, energy_reserve,
+                                   legacy_pruning)
 
     # ───────────────────────────────────────── metrics
     def metrics(self) -> Dict[str, float]:

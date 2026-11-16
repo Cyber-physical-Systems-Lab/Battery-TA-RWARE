@@ -96,8 +96,28 @@ def estimate(sim, t, robot: Robot, role: str, start=None) -> Tuple[float, float]
     return ticks, energy
 
 
+def _payload_prefix(cands, n: int, weight_kg: float) -> int:
+    """Length of the shortest prefix of ``cands`` (sorted by time) whose ``n`` largest payloads add
+    up to ``weight_kg``; ``len(cands)`` if no prefix does."""
+    best: List[float] = []                          # the n largest payloads seen so far, ascending
+    for k, c in enumerate(cands, 1):
+        best.append(c[0].spec.payload_kg)
+        best.sort()
+        del best[:-n]
+        if k >= n and sum(best) + 1e-9 >= weight_kg:
+            return k
+    return len(cands)
+
+
 def feasible_coalitions(sim, t, robots: Optional[Sequence[int]] = None, limit: int = 10,
-                        per_role_candidates: int = 6, energy_reserve: float = 0.05) -> List[Coalition]:
+                        per_role_candidates: int = 6, energy_reserve: float = 0.05,
+                        legacy_pruning: bool = False) -> List[Coalition]:
+    """Feasible crews for the open roles of ``t``'s current stage, best first.
+
+    Each role keeps its ``per_role_candidates`` fastest eligible robots. The carrier role keeps more
+    when those cannot lift the load together (2.1.1). ``legacy_pruning=True`` restores the 2.1.0
+    rule, which could cut every capable carrier and report no crew; it exists to reproduce archived
+    results only."""
     if t.done:
         return []
     pool = [sim.robots[i] for i in (robots if robots is not None else range(len(sim.robots)))]
@@ -105,6 +125,8 @@ def feasible_coalitions(sim, t, robots: Optional[Sequence[int]] = None, limit: i
     open_roles = t.joinable_roles()
     if not open_roles:
         return []
+    have_cap = sum(sim.robots[i].spec.payload_kg for i in t.assigned.get(t.type.carrier_role, [])) \
+        if t.type.carrier_role else 0.0
     per_role: Dict[str, List[Tuple[Robot, float, float]]] = {}
     for role, n in open_roles.items():
         rs = t.type.role(role)
@@ -123,10 +145,13 @@ def feasible_coalitions(sim, t, robots: Optional[Sequence[int]] = None, limit: i
         cands.sort(key=lambda c: (c[1], c[0].id))
         if len(cands) < n:
             return []
-        per_role[role] = cands[:max(n, per_role_candidates)]
+        keep = max(n, per_role_candidates)
+        if role == t.type.carrier_role and not legacy_pruning:
+            # the fastest candidates may all be too light for the load: extend the list to the shortest
+            # prefix whose n strongest carriers can lift it (none: no carrier set can)
+            keep = max(keep, _payload_prefix(cands, n, t.weight_kg - have_cap))
+        per_role[role] = cands[:keep]
     roles = list(open_roles)
-    have_cap = sum(sim.robots[i].spec.payload_kg for i in t.assigned.get(t.type.carrier_role, [])) \
-        if t.type.carrier_role else 0.0
     out: List[Coalition] = []
     combos = [itertools.combinations(per_role[role], open_roles[role]) for role in roles]
     for pick in itertools.product(*combos):

@@ -9,8 +9,10 @@ seeds 0-2 x {greedy FIFO, random} for 600 ticks (model 2.1), primitive mode for 
 intermediate with role alternatives, the same three scenarios under model 2.0, and the order layer
 (base order scenario, rules FIFO / NSP / PLB, seeds 0-1, 600 ticks, model 2.1).
 
-``reference_identity.json`` was recorded on commit 97f3b5e, before model 2.2 existed. Exit status 1
-if any fingerprint differs.
+``reference_identity.json`` was recorded on commit 97f3b5e, before model 2.2 existed, with the 2.1.0
+coalition candidate rule: compare with it using ``--legacy-pruning``. Without that flag the reference
+is ``reference_identity_2.1.1.json`` (corrected carrier pruning; the 5 greedy runs on intermediate
+differ from 2.1.0, the other 26 are identical). Exit status 1 if any fingerprint differs.
 """
 import argparse
 import hashlib
@@ -77,7 +79,13 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--write", help="write fingerprints to this file instead of comparing")
     ap.add_argument("--reference", default=os.path.join(HERE, "reference_identity.json"))
+    ap.add_argument("--legacy-pruning", action="store_true",
+                    help="use the 2.1.0 coalition candidate rule (the reference was recorded with it)")
     a = ap.parse_args(argv)
+    if a.legacy_pruning:
+        bt.Simulator.legacy_coalition_pruning = True
+    elif a.reference == os.path.join(HERE, "reference_identity.json"):
+        a.reference = os.path.join(HERE, "reference_identity_2.1.1.json")
     fp = fingerprints()
     if a.write:
         with open(a.write, "w") as f:

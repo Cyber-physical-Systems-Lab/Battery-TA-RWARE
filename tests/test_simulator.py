@@ -385,3 +385,36 @@ def test_state_view_arrays_are_typed_and_contiguous():
     assert a["robot_cell"].dtype == np.int32 and a["robot_cell"].shape == (len(env.sim.robots), 2)
     assert a["robot_capabilities"].shape[1] == len(env.sim.capabilities)
     assert all(v.flags.c_contiguous for v in a.values())
+
+
+def test_carrier_pruning_keeps_a_capable_carrier():
+    """2.1.1: six idle tote AGVs (20 kg) are faster than the pallet AGV (60 kg); the candidate list
+    must still reach it, and must agree with exhaustive generation."""
+    import battery_tarware as bt
+    from battery_tarware.coalition import _payload_prefix, feasible_coalitions
+    d = bt.get_scenario("intermediate")
+    d["demand"] = [{"kind": "batch", "count": 1, "task_type": "tote"}]
+    for seed in range(4):
+        sim = bt.Simulator(bt.ScenarioConfig.from_dict(d))
+        sim.reset(seed)
+        t = sim.create_task("pallet", sim.layout.cells("storage")[5 * seed], sim.layout.cells("goal")[0], weight_kg=40.0)
+        got = sim.feasible_coalitions(t.id, limit=1, energy_reserve=0.15)
+        full = sim.feasible_coalitions(t.id, limit=1, per_role_candidates=len(sim.robots), energy_reserve=0.15)
+        assert got and full and got[0].est_ticks == full[0].est_ticks
+        assert sim.robots[got[0].assignment["carrier"][0]].spec.name == "pallet_agv"
+        assert not sim.feasible_coalitions(t.id, limit=1, energy_reserve=0.15, legacy_pruning=True)
+        sim.legacy_coalition_pruning = True
+        assert not sim.feasible_coalitions(t.id, limit=1, energy_reserve=0.15)
+        o = sim.create_task("oversize", sim.layout.cells("storage")[3], sim.layout.cells("goal")[0], weight_kg=70.0)
+        sim.legacy_coalition_pruning = False
+        both = sim.feasible_coalitions(o.id, limit=1, energy_reserve=0.15)
+        assert both and feasible_coalitions(sim, o, limit=1, per_role_candidates=99, energy_reserve=0.15)
+        assert sum(sim.robots[i].spec.payload_kg for i in both[0].assignment["carriers"]) >= 70.0
+
+    class C:                                           # (robot, ticks, energy) with a payload
+        def __init__(self, kg):
+            self.spec = type("S", (), {"payload_kg": kg})
+    cands = [(C(20), 1, 0), (C(20), 2, 0), (C(60), 3, 0), (C(60), 4, 0)]
+    assert _payload_prefix(cands, 1, 15) == 1 and _payload_prefix(cands, 1, 40) == 3
+    assert _payload_prefix(cands, 2, 40) == 2 and _payload_prefix(cands, 2, 100) == 4
+    assert _payload_prefix(cands, 2, 500) == 4          # nobody can: the caller finds no crew

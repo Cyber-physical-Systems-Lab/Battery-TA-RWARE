@@ -103,8 +103,19 @@ def test_helper_avoids_foreign_cell_unit():
 
 
 def test_model_2_0_and_2_1_trajectories_unchanged():
+    """2.1.0 trajectories are reproduced with the 2.1.0 coalition candidate rule; with the corrected
+    rule (2.1.1) only the greedy runs on intermediate differ, and they match their own reference."""
     import identity
     import json
-    ref = json.load(open(os.path.join(ROOT, "experiments", "checks", "reference_identity.json")))
-    now = identity.fingerprints()
-    assert now == ref
+    import battery_tarware as bt
+    checks = os.path.join(ROOT, "experiments", "checks")
+    ref = json.load(open(os.path.join(checks, "reference_identity.json")))
+    ref_211 = json.load(open(os.path.join(checks, "reference_identity_2.1.1.json")))
+    bt.Simulator.legacy_coalition_pruning = True
+    try:
+        assert identity.fingerprints() == ref
+    finally:
+        del bt.Simulator.legacy_coalition_pruning
+    assert identity.fingerprints() == ref_211
+    changed = sorted(k for k in ref if ref[k] != ref_211[k])
+    assert changed and all(k.startswith("intermediate/") and "/greedy" in k for k in changed)
